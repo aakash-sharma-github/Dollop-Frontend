@@ -2,8 +2,8 @@
   "expo": {
     "name": "Dollop",
     "slug": "dollop",
-    "version": "1.0.1",
-    "buildNumber": 2,
+    "version": "1.0.2",
+    "buildNumber": 3,
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -26,7 +26,9 @@
       },
       "package": "com.dollop.app",
       "permissions": [
-        "android.permission.FOREGROUND_SERVICE"
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
@@ -44,6 +46,12 @@
         }
       ]
     ],
-    "scheme": "dollop"
+    "scheme": "dollop",
+    "extra": {
+      "eas": {
+        "projectId": "fe89ca25-917f-437c-9f0c-9d73cb68738a"
+      }
+    },
+    "owner": "aakash-expo"
   }
 }

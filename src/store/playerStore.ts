@@ -2,7 +2,33 @@ import { create } from 'zustand';
 import { audioPlayer } from '@services/audio/audioPlayer';
 import type { Song, PlayerState, RepeatMode } from '@types/index';
 
-interface PlayerStore extends PlayerState {
+// ─── State is split into two slices ──────────────────────────────────────────
+//
+// WHY: expo-av fires a status callback every 500ms while playing. If positionMs
+// lives in the same Zustand slice as currentSong/isPlaying, every single tick
+// triggers a re-render of any component that subscribes to the store without a
+// granular selector — this was the cause of the <2 FPS issue.
+//
+// FIX: positionMs and durationMs are isolated in a separate store
+// (usePlayerProgressStore). Components that only show the song title/controls
+// subscribe to usePlayerStore with stable selectors. Only the seek bar and
+// the mini player's progress bar subscribe to usePlayerProgressStore, so only
+// those two tiny views re-render every 500ms.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Progress store (updates every 500ms) ─────────────────────────────────────
+interface ProgressState {
+  positionMs: number;
+  durationMs: number;
+}
+
+export const usePlayerProgressStore = create<ProgressState>(() => ({
+  positionMs: 0,
+  durationMs: 0,
+}));
+
+// ── Main player store (only updates on meaningful events) ─────────────────────
+interface PlayerStore extends Omit<PlayerState, 'positionMs' | 'durationMs'> {
   isVisible: boolean;
   playSong: (song: Song, queue?: Song[]) => Promise<void>;
   playQueue: (songs: Song[], startIndex?: number) => Promise<void>;
@@ -15,14 +41,45 @@ interface PlayerStore extends PlayerState {
   setVolume: (volume: number) => Promise<void>;
   toggleShuffle: () => void;
   cycleRepeatMode: () => void;
-  // Called by audioPlayer status callback
-  _syncStatus: (status: { isPlaying: boolean; isLoading: boolean; positionMs: number; durationMs: number; didFinish: boolean }) => void;
 }
 
 export const usePlayerStore = create<PlayerStore>((set, get) => {
-  // Wire the audio player status callback into the store
+  // Wire the audio player status callback into the stores.
+  // Progress (positionMs/durationMs) goes to the isolated progress store.
+  // Playback state (isPlaying/isLoading) updates the main store only when
+  // the value actually changes (Object.is check via Zustand's default equality).
   audioPlayer.setStatusCallback((status) => {
-    get()._syncStatus(status);
+    // Always update progress store — only seek bar and mini-player progress
+    // bar subscribe to this, so only those re-render.
+    usePlayerProgressStore.setState({
+      positionMs: status.positionMs,
+      durationMs: status.durationMs,
+    });
+
+    // Only update main store for state transitions, not every tick
+    const { isPlaying, isLoading } = get();
+    if (status.isPlaying !== isPlaying || status.isLoading !== isLoading) {
+      set({ isPlaying: status.isPlaying, isLoading: status.isLoading });
+    }
+
+    // Handle track completion
+    if (status.didFinish) {
+      const { queue, queueIndex, repeatMode, isShuffle } = get();
+      if (repeatMode === 'one') {
+        void get().seekTo(0).then(() => get().resume());
+        return;
+      }
+      const nextIndex = isShuffle
+        ? Math.floor(Math.random() * queue.length)
+        : queueIndex + 1;
+      if (nextIndex < queue.length) {
+        void get().playQueue(queue, nextIndex);
+      } else if (repeatMode === 'all') {
+        void get().playQueue(queue, 0);
+      } else {
+        set({ isPlaying: false });
+      }
+    }
   });
 
   return {
@@ -31,40 +88,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     queueIndex: 0,
     isPlaying: false,
     isLoading: false,
-    positionMs: 0,
-    durationMs: 0,
     repeatMode: 'off',
     isShuffle: false,
     volume: 1,
     isVisible: false,
-
-    _syncStatus: (status) => {
-      set({
-        isPlaying: status.isPlaying,
-        isLoading: status.isLoading,
-        positionMs: status.positionMs,
-        durationMs: status.durationMs,
-      });
-
-      // Auto-advance queue when track finishes
-      if (status.didFinish) {
-        const { queue, queueIndex, repeatMode, isShuffle } = get();
-        if (repeatMode === 'one') {
-          void get().seekTo(0).then(() => get().resume());
-          return;
-        }
-        const nextIndex = isShuffle
-          ? Math.floor(Math.random() * queue.length)
-          : queueIndex + 1;
-        if (nextIndex < queue.length) {
-          void get().playQueue(queue, nextIndex);
-        } else if (repeatMode === 'all') {
-          void get().playQueue(queue, 0);
-        } else {
-          set({ isPlaying: false });
-        }
-      }
-    },
 
     playSong: async (song, queue) => {
       const songs = queue ?? [song];
@@ -76,13 +103,18 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       set({ isLoading: true, isVisible: true });
       const song = songs[startIndex];
       if (!song) { set({ isLoading: false }); return; }
-      set({ queue: songs, queueIndex: startIndex, currentSong: song, positionMs: 0 });
+      set({ queue: songs, queueIndex: startIndex, currentSong: song });
+      usePlayerProgressStore.setState({ positionMs: 0, durationMs: song.durationMs });
       await audioPlayer.loadAndPlay(song);
     },
 
-    pause: async () => { await audioPlayer.pause(); },
+    pause: async () => {
+      await audioPlayer.pause();
+    },
 
-    resume: async () => { await audioPlayer.play(); },
+    resume: async () => {
+      await audioPlayer.play();
+    },
 
     togglePlayPause: async () => {
       if (get().isPlaying) await get().pause();
@@ -98,18 +130,20 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     },
 
     skipToPrevious: async () => {
-      const { positionMs, queue, queueIndex } = get();
+      const { positionMs } = usePlayerProgressStore.getState();
       if (positionMs > 3000) {
         await audioPlayer.seekTo(0);
+        usePlayerProgressStore.setState({ positionMs: 0 });
         return;
       }
+      const { queue, queueIndex } = get();
       const prevIndex = Math.max(0, queueIndex - 1);
       await get().playQueue(queue, prevIndex);
     },
 
     seekTo: async (positionMs) => {
       await audioPlayer.seekTo(positionMs);
-      set({ positionMs });
+      usePlayerProgressStore.setState({ positionMs });
     },
 
     setVolume: async (volume) => {
@@ -127,10 +161,6 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
   };
 });
 
-/**
- * Call once at app startup to configure the audio session.
- * Lives in App.tsx useEffect — safe in Expo (no native registration needed).
- */
 export async function setupAudioPlayer(): Promise<void> {
   await audioPlayer.configure();
 }
