@@ -2,8 +2,8 @@
   "expo": {
     "name": "Dollop",
     "slug": "dollop",
-    "version": "1.0.2",
-    "buildNumber": 3,
+    "version": "1.1.2",
+    "buildNumber": 7,
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -27,8 +27,8 @@
       "package": "com.dollop.app",
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -43,6 +43,14 @@
           "backgroundColor": "#0A0805",
           "image": "./assets/splash.png",
           "imageWidth": 200
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Dollop to access your music library.",
+          "savePhotosPermission": "Allow Dollop to save music to your library.",
+          "isAccessMediaLocationEnabled": true
         }
       ]
     ],

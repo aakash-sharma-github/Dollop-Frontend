@@ -4,7 +4,10 @@ import { ROUTES } from '@constants/index';
 
 export type AuthStackParamList = {
   [ROUTES.LOGIN]: undefined;
-  [ROUTES.OTP_VERIFY]: { email: string };
+  // sentAt: unix timestamp (ms) when OTP was sent — used to compute resend cooldown
+  [ROUTES.OTP_VERIFY]: { email: string; sentAt: number };
+  [ROUTES.PRIVACY_POLICY]: undefined;
+  [ROUTES.TERMS_CONDITIONS]: undefined;
 };
 
 export type MainTabParamList = {
@@ -12,12 +15,16 @@ export type MainTabParamList = {
   [ROUTES.SEARCH]: undefined;
   [ROUTES.LIBRARY]: undefined;
   [ROUTES.PROFILE]: undefined;
+  [ROUTES.SETTINGS]: undefined;
 };
 
 export type RootStackParamList = {
   [ROUTES.AUTH_STACK]: undefined;
   [ROUTES.MAIN_TABS]: undefined;
   [ROUTES.PLAYER]: undefined;
+  [ROUTES.SETTINGS]: undefined;
+  [ROUTES.PRIVACY_POLICY]: undefined;
+  [ROUTES.TERMS_CONDITIONS]: undefined;
 };
 
 export type LoginScreenProps = NativeStackScreenProps<AuthStackParamList, typeof ROUTES.LOGIN>;
@@ -27,3 +34,6 @@ export type SearchScreenProps = BottomTabScreenProps<MainTabParamList, typeof RO
 export type LibraryScreenProps = BottomTabScreenProps<MainTabParamList, typeof ROUTES.LIBRARY>;
 export type ProfileScreenProps = BottomTabScreenProps<MainTabParamList, typeof ROUTES.PROFILE>;
 export type PlayerScreenProps = NativeStackScreenProps<RootStackParamList, typeof ROUTES.PLAYER>;
+export type SettingsScreenProps = NativeStackScreenProps<RootStackParamList, typeof ROUTES.SETTINGS>;
+export type PrivacyPolicyScreenProps = NativeStackScreenProps<RootStackParamList, typeof ROUTES.PRIVACY_POLICY>;
+export type TermsConditionsScreenProps = NativeStackScreenProps<RootStackParamList, typeof ROUTES.TERMS_CONDITIONS>;

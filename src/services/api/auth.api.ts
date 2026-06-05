@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { AuthResult, TokenPair } from '@types/index';
+import type { AuthResult, TokenPair } from '@app-types/index';
 
 export const authApi = {
   exchangeToken: (supabaseToken: string): Promise<AuthResult> =>

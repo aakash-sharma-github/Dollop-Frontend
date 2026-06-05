@@ -20,7 +20,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '@theme/index';
 import { Spacing, Layout, BorderRadius } from '@theme/spacing';
 import { usePlayerStore, usePlayerProgressStore } from '@store/playerStore';
-import type { PlayerScreenProps } from '@types/navigation';
+import type { PlayerScreenProps } from '@app-types/navigation';
 
 const { width: W } = Dimensions.get('window');
 const ARTWORK_SIZE = W - (Layout.screenPaddingH + Spacing[4]) * 2;

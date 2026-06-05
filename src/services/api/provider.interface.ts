@@ -1,4 +1,4 @@
-import type { Song } from '@types/index';
+import type { Song } from '@app-types/index';
 
 export interface MusicApiProvider {
   readonly name: string;

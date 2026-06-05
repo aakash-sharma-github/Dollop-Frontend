@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>Sign in to Dollop</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: #0E0C09;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      color: #FDFAF4;
+    }
+
+    .wrapper {
+      background-color: #0E0C09;
+      padding: 40px 16px;
+      min-height: 100vh;
+    }
+
+    .card {
+      background: linear-gradient(160deg, #1C1A16 0%, #141210 100%);
+      border: 1px solid rgba(155, 149, 144, 0.14);
+      border-radius: 24px;
+      max-width: 520px;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .accent-bar {
+      height: 3px;
+      background: linear-gradient(90deg, #C8861C 0%, #E8A838 40%, #F0C060 70%, #E8A838 100%);
+    }
+
+    .card-inner { padding: 48px 40px 40px; }
+
+    .logo-wrap { margin-bottom: 36px; }
+
+    .logo-mark {
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 4px;
+      background: #E8A838;
+      border-radius: 16px;
+      padding: 14px 16px 12px;
+      margin-bottom: 12px;
+    }
+
+    .eq-bar { width: 5px; border-radius: 3px; background: #0E0C09; }
+    .logo-name { font-size: 22px; font-weight: 700; color: #FDFAF4; letter-spacing: -1px; }
+
+    .heading {
+      font-size: 28px;
+      font-weight: 700;
+      color: #FDFAF4;
+      letter-spacing: -0.5px;
+      line-height: 1.2;
+      margin-bottom: 12px;
+    }
+
+    .subheading {
+      font-size: 16px;
+      color: #9B9590;
+      line-height: 1.6;
+      margin-bottom: 40px;
+    }
+
+    /* ── OTP styles ── */
+    .otp-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #6B6660;
+      margin-bottom: 16px;
+    }
+
+    .otp-container {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .otp-cell {
+      flex: 1;
+      background: #0E0C09;
+      border: 1.5px solid #C8861C;
+      border-radius: 12px;
+      padding: 16px 4px;
+      text-align: center;
+      font-size: 28px;
+      font-weight: 700;
+      color: #E8A838;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .otp-note {
+      font-size: 13px;
+      color: #6B6660;
+      margin-bottom: 36px;
+    }
+
+    /* ── Magic link styles ── */
+    .wave-container {
+      text-align: center;
+      margin-bottom: 40px;
+      padding: 32px 0;
+      background: rgba(232, 168, 56, 0.04);
+      border-radius: 16px;
+      border: 1px solid rgba(232, 168, 56, 0.1);
+    }
+
+    .wave-bars {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 56px;
+    }
+
+    .wave-bar { width: 6px; border-radius: 4px; background: #E8A838; }
+
+    .cta-wrap { text-align: center; margin-bottom: 32px; }
+
+    .signin-btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #E8A838 0%, #C8861C 100%);
+      color: #0E0C09 !important;
+      font-size: 17px;
+      font-weight: 700;
+      text-decoration: none;
+      padding: 18px 48px;
+      border-radius: 14px;
+      letter-spacing: -0.1px;
+      box-shadow: 0 8px 32px rgba(232, 168, 56, 0.24);
+    }
+
+    .btn-note { font-size: 13px; color: #6B6660; margin-top: 16px; }
+
+    .fallback-wrap {
+      background: #0E0C09;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 28px;
+    }
+
+    .fallback-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: #6B6660;
+      margin-bottom: 10px;
+    }
+
+    .fallback-link {
+      font-size: 13px;
+      color: #E8A838;
+      word-break: break-all;
+      text-decoration: none;
+      line-height: 1.5;
+    }
+
+    /* ── Shared styles ── */
+    .divider {
+      height: 1px;
+      background: rgba(155, 149, 144, 0.12);
+      margin: 36px 0;
+    }
+
+    .cta-section { text-align: center; margin-bottom: 36px; }
+    .cta-label { font-size: 13px; color: #6B6660; margin-bottom: 16px; }
+
+    .open-app-btn {
+      display: inline-block;
+      background: #E8A838;
+      color: #0E0C09 !important;
+      font-size: 15px;
+      font-weight: 700;
+      text-decoration: none;
+      padding: 14px 32px;
+      border-radius: 12px;
+    }
+
+    .security-box {
+      background: rgba(232, 168, 56, 0.06);
+      border: 1px solid rgba(232, 168, 56, 0.16);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 32px;
+    }
+
+    .security-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #E8A838;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .security-text { font-size: 13px; color: #6B6660; line-height: 1.5; }
+
+    .footer {
+      border-top: 1px solid rgba(155, 149, 144, 0.10);
+      padding: 24px 40px;
+      text-align: center;
+    }
+
+    .footer-text { font-size: 12px; color: #3A3630; line-height: 1.6; }
+    .footer-text a { color: #6B6660; text-decoration: none; }
+
+    @media (max-width: 480px) {
+      .card-inner { padding: 32px 24px 28px; }
+      .footer { padding: 20px 24px; }
+      .heading { font-size: 24px; }
+      .otp-cell { font-size: 22px; padding: 12px 2px; }
+      .signin-btn { padding: 16px 32px; font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="card">
+      <div class="accent-bar"></div>
+      <div class="card-inner">
+
+        <!-- Logo (shared) -->
+        <div class="logo-wrap">
+          <div>
+            <div class="logo-mark">
+              <div class="eq-bar" style="height: 10px;"></div>
+              <div class="eq-bar" style="height: 17px;"></div>
+              <div class="eq-bar" style="height: 22px;"></div>
+              <div class="eq-bar" style="height: 14px;"></div>
+              <div class="eq-bar" style="height: 8px;"></div>
+            </div>
+          </div>
+          <div class="logo-name">dollop</div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- OTP branch: rendered when .Token is present    -->
+        <!-- ═══════════════════════════════════════════════ -->
+        {{ if .Token }}
+
+        <p class="heading">Your sign-in code</p>
+        <p class="subheading">
+          Use the code below to sign in to Dollop.<br />
+          It was requested for <strong style="color: #FDFAF4;">{{ .Email }}</strong>
+        </p>
+
+        
+        <div class="wave-container">
+          <div class="wave-bars">
+            <div class="wave-bar" style="height:14px; opacity:0.4;"></div>
+            <div class="wave-bar" style="height:22px; opacity:0.55;"></div>
+            <div class="wave-bar" style="height:34px; opacity:0.65;"></div>
+            <div class="wave-bar" style="height:48px; opacity:0.8;"></div>
+            <div class="wave-bar" style="height:56px; opacity:1;"></div>
+            <div class="wave-bar" style="height:42px; opacity:0.85;"></div>
+            <div class="wave-bar" style="height:28px; opacity:0.7;"></div>
+            <div class="wave-bar" style="height:18px; opacity:0.5;"></div>
+            <div class="wave-bar" style="height:38px; opacity:0.75;"></div>
+            <div class="wave-bar" style="height:52px; opacity:0.9;"></div>
+            <div class="wave-bar" style="height:44px; opacity:0.85;"></div>
+            <div class="wave-bar" style="height:30px; opacity:0.7;"></div>
+            <div class="wave-bar" style="height:20px; opacity:0.55;"></div>
+            <div class="wave-bar" style="height:12px; opacity:0.4;"></div>
+          </div>
+        </div>
+
+        <p class="otp-label">One-time code</p>
+        <div class="otp-container">
+          <div class="otp-cell">{{ .Token }}</div>
+        </div>
+        <p class="otp-note">This code expires in <strong style="color: #9B9590;">10 minutes</strong> and can only be used once.</p>
+
+        <div class="divider"></div>
+
+        <div class="cta-section">
+          <p class="cta-label">Already have the app open?</p>
+          <a href="{{ .SiteURL }}" class="open-app-btn">Open Dollop</a>
+        </div>
+
+        <div class="security-box">
+          <p class="security-title">🔒 Security notice</p>
+          <p class="security-text">
+            If you didn't request this code, you can safely ignore this email.
+            Never share this code with anyone — Dollop will never ask for it.
+          </p>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════ -->
+        <!-- Magic link branch: rendered when .Token is absent  -->
+        <!-- ════════════════════════════════════════════════════ -->
+        {{ else }}
+
+        <p class="heading">Sign in to Dollop</p>
+        <p class="subheading">
+          Click the button below to sign in instantly — no password needed.<br />
+          This link is for <strong style="color: #FDFAF4;">{{ .Email }}</strong>
+        </p>
+
+        <div class="wave-container">
+          <div class="wave-bars">
+            <div class="wave-bar" style="height:14px; opacity:0.4;"></div>
+            <div class="wave-bar" style="height:22px; opacity:0.55;"></div>
+            <div class="wave-bar" style="height:34px; opacity:0.65;"></div>
+            <div class="wave-bar" style="height:48px; opacity:0.8;"></div>
+            <div class="wave-bar" style="height:56px; opacity:1;"></div>
+            <div class="wave-bar" style="height:42px; opacity:0.85;"></div>
+            <div class="wave-bar" style="height:28px; opacity:0.7;"></div>
+            <div class="wave-bar" style="height:18px; opacity:0.5;"></div>
+            <div class="wave-bar" style="height:38px; opacity:0.75;"></div>
+            <div class="wave-bar" style="height:52px; opacity:0.9;"></div>
+            <div class="wave-bar" style="height:44px; opacity:0.85;"></div>
+            <div class="wave-bar" style="height:30px; opacity:0.7;"></div>
+            <div class="wave-bar" style="height:20px; opacity:0.55;"></div>
+            <div class="wave-bar" style="height:12px; opacity:0.4;"></div>
+          </div>
+        </div>
+
+        <div class="cta-wrap">
+          <a href="{{ .ConfirmationURL }}" class="signin-btn">Sign in to Dollop</a>
+          <p class="btn-note">This link expires in <strong style="color: #9B9590;">1 hour</strong> and can only be used once.</p>
+        </div>
+
+        <div class="fallback-wrap">
+          <p class="fallback-label">Button not working?</p>
+          <a href="{{ .ConfirmationURL }}" class="fallback-link">{{ .ConfirmationURL }}</a>
+        </div>
+
+        <div class="security-box">
+          <p class="security-title">🔒 Security notice</p>
+          <p class="security-text">
+            If you didn't request this link, you can safely ignore this email.
+            Your account is safe — nobody can sign in without clicking this link.
+          </p>
+        </div>
+
+        {{ end }}
+        <!-- ════════════════════════════════ end conditional ══ -->
+
+      </div>
+
+      <!-- Footer (shared) -->
+      <div class="footer">
+        <p class="footer-text">
+          You're receiving this because a sign-in was requested for your Dollop account.<br />
+          <a href="{{ .SiteURL }}/unsubscribe">Unsubscribe</a> · <a href="{{ .SiteURL }}/privacy">Privacy Policy</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

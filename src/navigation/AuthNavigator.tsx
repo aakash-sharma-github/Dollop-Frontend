@@ -1,7 +1,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ROUTES } from '@constants/index';
-import type { AuthStackParamList } from '@types/navigation';
+import type { AuthStackParamList } from '@app-types/navigation';
 import { LoginScreen } from '@screens/Auth/LoginScreen';
 import { OtpVerifyScreen } from '@screens/Auth/OtpVerifyScreen';
 

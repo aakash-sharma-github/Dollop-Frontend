@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ROUTES } from '@constants/index';
-import type { MainTabParamList } from '@types/navigation';
+import type { MainTabParamList } from '@app-types/navigation';
 import { useTheme } from '@theme/index';
 import { Layout } from '@theme/spacing';
 import { HomeScreen } from '@screens/Home/HomeScreen';

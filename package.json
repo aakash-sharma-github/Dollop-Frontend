@@ -1,6 +1,6 @@
 {
-  "name": "dollop-frontend",
-  "version": "1.0.2",
+  "name": "dollop",
+  "version": "1.1.2",
   "main": "expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
@@ -12,7 +12,9 @@
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
     "prebuild": "bunx expo prebuild && cd android && ./gradlew assemblerelease",
-    "adb:install": "cd android && adb install app/build/outputs/apk/release/app-release.apk"
+    "prebuild:debug": "bunx expo prebuild --platform android --clean && cd android && ./gradlew assembleDebug",
+    "adb:install": "cd android && adb install app/build/outputs/apk/release/app-release.apk",
+    "adb:debug": "cd android && adb install -r app/build/outputs/apk/debug/app-debug.apk"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.2",
@@ -22,12 +24,15 @@
     "@react-navigation/native-stack": "^6.9.26",
     "@supabase/supabase-js": "^2.43.4",
     "@tanstack/react-query": "^5.45.1",
+    "@types/node": "^25.9.1",
     "expo": "~51.0.0",
     "expo-auth-session": "~5.5.2",
     "expo-av": "~14.0.7",
     "expo-crypto": "~13.0.2",
+    "expo-file-system": "~17.0.1",
     "expo-font": "~12.0.10",
     "expo-linear-gradient": "~13.0.2",
+    "expo-media-library": "~16.0.4",
     "expo-secure-store": "~13.0.2",
     "expo-splash-screen": "~0.27.5",
     "expo-status-bar": "~1.12.1",

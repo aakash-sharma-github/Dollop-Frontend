@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { audioPlayer } from '@services/audio/audioPlayer';
-import type { Song, PlayerState, RepeatMode } from '@types/index';
+import type { Song, PlayerState, RepeatMode } from '@app-types/index';
 
 // ─── State is split into two slices ──────────────────────────────────────────
 //

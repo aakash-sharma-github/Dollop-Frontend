@@ -1,6 +1,8 @@
 {
   "extends": "expo/tsconfig.base",
+  "name": "dollop",
   "compilerOptions": {
+    "types": ["node"],
     "strict": true,
     "baseUrl": "./src",
     "resolveJsonModule": true,
@@ -14,9 +16,10 @@
       "@theme/*": ["theme/*"],
       "@navigation/*": ["navigation/*"],
       "@constants/*": ["constants/*"],
-      "@types/*": ["types/*"],
+      "@app-types/*": ["types/*"],
       "@utils/*": ["utils/*"]
-    }
+    },
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*", "App.tsx", "app.json"]
 }

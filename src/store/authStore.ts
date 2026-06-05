@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { User, AuthResult } from '@types/index';
+import type { User, AuthResult } from '@app-types/index';
 import { tokenStorage } from '@services/auth/tokenStorage';
 import { authApi } from '@services/api';
 

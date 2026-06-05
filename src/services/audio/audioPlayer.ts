@@ -1,5 +1,5 @@
 import { Audio, type AVPlaybackStatus } from 'expo-av';
-import type { Song } from '@types/index';
+import type { Song } from '@app-types/index';
 
 /**
  * AudioPlayer wraps expo-av's Audio.Sound with a clean interface

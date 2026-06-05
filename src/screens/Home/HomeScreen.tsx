@@ -6,8 +6,8 @@ import { useTheme } from '@theme/index';
 import { Spacing, Layout, BorderRadius } from '@theme/spacing';
 import { useAuthStore } from '@store/authStore';
 import { usePlayerStore } from '@store/playerStore';
-import type { Song } from '@types/index';
-import type { HomeScreenProps } from '@types/navigation';
+import type { Song } from '@app-types/index';
+import type { HomeScreenProps } from '@app-types/navigation';
 
 const { width: W } = Dimensions.get('window');
 const CARD_W = (W - Layout.screenPaddingH * 2 - Spacing[3]) / 2;
