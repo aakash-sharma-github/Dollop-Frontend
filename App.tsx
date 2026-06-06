@@ -13,7 +13,7 @@ import { useThemeStore } from '@store/themeStore';
 import { setupAudioPlayer } from '@store/playerStore';
 import { OfflineBanner } from '@components/common/OfflineBanner';
 
-await SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient({
   defaultOptions: {
