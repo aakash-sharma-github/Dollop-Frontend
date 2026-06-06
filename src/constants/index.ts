@@ -29,6 +29,7 @@ export const STORAGE_KEYS = {
   ACCESS_TOKEN: 'dollop_access_token',
   REFRESH_TOKEN: 'dollop_refresh_token',
   LOCAL_MUSIC_ENABLED: 'dollop_local_music_enabled',
+  THEME_PREFERENCE: 'dollop_theme_preference',
 } as const;
 
 export const ERROR_MESSAGES = {

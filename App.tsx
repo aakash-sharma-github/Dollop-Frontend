@@ -9,10 +9,11 @@ import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '@theme/index';
 import { RootNavigator } from '@navigation/RootNavigator';
 import { useAuthStore } from '@store/authStore';
+import { useThemeStore } from '@store/themeStore';
 import { setupAudioPlayer } from '@store/playerStore';
+import { OfflineBanner } from '@components/common/OfflineBanner';
 
-// Keep the splash visible until we're ready
-SplashScreen.preventAutoHideAsync();
+await SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,28 +26,27 @@ const queryClient = new QueryClient({
   },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Inner app — inside ThemeProvider
-// ─────────────────────────────────────────────────────────────────────────────
 function AppContent(): React.JSX.Element {
   const { colors, isDark } = useTheme();
   const hydrateAuth = useAuthStore((s) => s.hydrateFromStorage);
   const isLoading = useAuthStore((s) => s.isLoading);
+  const loadTheme = useThemeStore((s) => s.loadPreference);
 
   const init = useCallback(async () => {
     try {
-      await setupAudioPlayer();
-      await hydrateAuth();
+      await Promise.all([
+        setupAudioPlayer(),
+        loadTheme(),
+        hydrateAuth(),
+      ]);
     } catch (err) {
       console.warn('[App] init error:', err);
     } finally {
       await SplashScreen.hideAsync();
     }
-  }, [hydrateAuth]);
+  }, [hydrateAuth, loadTheme]);
 
-  useEffect(() => {
-    void init();
-  }, [init]);
+  useEffect(() => { void init(); }, [init]);
 
   if (isLoading) {
     return (
@@ -59,6 +59,7 @@ function AppContent(): React.JSX.Element {
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
+      <OfflineBanner />
       <NavigationContainer>
         <RootNavigator />
       </NavigationContainer>
@@ -66,9 +67,6 @@ function AppContent(): React.JSX.Element {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Root — provider tree
-// ─────────────────────────────────────────────────────────────────────────────
 export default function App(): React.JSX.Element {
   return (
     <GestureHandlerRootView style={styles.root}>
