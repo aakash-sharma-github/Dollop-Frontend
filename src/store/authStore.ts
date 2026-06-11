@@ -7,8 +7,6 @@ import { authApi } from '@services/api';
 const USER_CACHE_KEY = 'dollop_user_cache';
 
 // ── Snake_case → camelCase transform ─────────────────────────────────────────
-// The backend returns Supabase DB row field names (snake_case).
-// Our frontend User type uses camelCase. This function bridges the gap.
 type ApiUserRow = {
   id: string;
   email: string;
@@ -27,7 +25,6 @@ function mapApiUserToUser(raw: ApiUserRow): User {
   return {
     id: raw.id,
     email: raw.email,
-    // Accept either snake_case (from backend) or camelCase (from cache)
     displayName: raw.displayName ?? raw.display_name ?? null,
     avatarUrl: raw.avatarUrl ?? raw.avatar_url ?? null,
     provider: raw.provider,
@@ -48,13 +45,35 @@ async function loadUserCache(): Promise<User | null> {
     const raw = await SecureStore.getItemAsync(USER_CACHE_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as User;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 async function clearUserCache(): Promise<void> {
   try { await SecureStore.deleteItemAsync(USER_CACHE_KEY); } catch { /* non-fatal */ }
+}
+
+// ── Session refresh helper ────────────────────────────────────────────────────
+/**
+ * Attempts to refresh the access token using the stored refresh token.
+ * Returns the refreshed user or null if refresh fails.
+ *
+ * This is called BEFORE treating any auth failure as a logout event.
+ * JWT access tokens expire in 15 minutes — refresh tokens last 7 days.
+ * Without this, users get logged out after every 15 minute idle period.
+ */
+async function tryRefreshSession(): Promise<User | null> {
+  try {
+    const refreshToken = await tokenStorage.getRefreshToken();
+    if (!refreshToken) return null;
+    const { tokens } = await authApi.refreshToken(refreshToken);
+    await tokenStorage.saveTokens(tokens.accessToken, tokens.refreshToken);
+    const { user: rawUser } = await authApi.getMe();
+    const user = mapApiUserToUser(rawUser as unknown as ApiUserRow);
+    await saveUserCache(user);
+    return user;
+  } catch {
+    return null;
+  }
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -75,6 +94,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading: true,
   isOffline: false,
 
+  /**
+   * Called on app launch. Strategy:
+   *
+   * 1. No tokens → not logged in
+   * 2. Has tokens → restore from cache immediately (instant UI, no flicker)
+   * 3. Background: try getMe() to refresh user data
+   *    a. Success → update cache, mark online
+   *    b. 401/403 → try token refresh. If refresh succeeds → update. If fails → logout
+   *    c. Network error → stay logged in with cache, mark offline
+   *
+   * This means the user is NEVER logged out just because the network is down
+   * or because the 15-minute access token has expired (refresh handles that).
+   */
   hydrateFromStorage: async () => {
     set({ isLoading: true });
     try {
@@ -85,45 +117,56 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
 
+      // Step 1: Restore from cache immediately so UI shows instantly
+      const cachedUser = await loadUserCache();
+      if (cachedUser) {
+        set({ user: cachedUser, isAuthenticated: true, isOffline: false });
+        set({ isLoading: false }); // Hide splash immediately
+      }
+
+      // Step 2: Validate token in the background (don't block UI)
       try {
         const { user: rawUser } = await authApi.getMe();
-        const user = mapApiUserToUser(rawUser as unknown as ApiUserRow);
-        await saveUserCache(user);
-        set({ user, isAuthenticated: true, isOffline: false });
-      } catch (networkErr) {
-        const isNetworkFailure = networkErr instanceof Error && (
-          networkErr.message.toLowerCase().includes('network') ||
-          networkErr.message.toLowerCase().includes('failed to fetch') ||
-          networkErr.message.toLowerCase().includes('timeout') ||
-          networkErr.message.includes('Network request failed')
+        const freshUser = mapApiUserToUser(rawUser as unknown as ApiUserRow);
+        await saveUserCache(freshUser);
+        set({ user: freshUser, isAuthenticated: true, isOffline: false });
+      } catch (err) {
+        const isAuthFailure = err instanceof Error && (
+          err.message.includes('401') ||
+          err.message.includes('403') ||
+          err.message.includes('INVALID_TOKEN') ||
+          err.message.includes('TOKEN_EXPIRED') ||
+          err.message.includes('USER_NOT_FOUND')
+        );
+        const isNetworkError = err instanceof Error && (
+          err.message.includes('Network request failed') ||
+          err.message.includes('Failed to fetch') ||
+          err.message.includes('timeout') ||
+          err.message.includes('network')
         );
 
-        if (isNetworkFailure) {
-          const cachedUser = await loadUserCache();
-          if (cachedUser) {
-            set({ user: cachedUser, isAuthenticated: true, isOffline: true });
-            return;
+        if (isAuthFailure) {
+          // Token is expired or invalid — try to refresh before logging out
+          const refreshedUser = await tryRefreshSession();
+          if (refreshedUser) {
+            set({ user: refreshedUser, isAuthenticated: true, isOffline: false });
+          } else if (!cachedUser) {
+            // Refresh also failed and no cache → must log out
+            await tokenStorage.clearTokens();
+            await clearUserCache();
+            set({ user: null, isAuthenticated: false });
           }
-          try {
-            const refreshToken = await tokenStorage.getRefreshToken();
-            if (!refreshToken) throw new Error('No refresh token');
-            const { tokens } = await authApi.refreshToken(refreshToken);
-            await tokenStorage.saveTokens(tokens.accessToken, tokens.refreshToken);
-            const { user: rawUser } = await authApi.getMe();
-            const user = mapApiUserToUser(rawUser as unknown as ApiUserRow);
-            await saveUserCache(user);
-            set({ user, isAuthenticated: true, isOffline: false });
-          } catch {
-            set({ user: null, isAuthenticated: true, isOffline: true });
-          }
-        } else {
-          await tokenStorage.clearTokens();
-          await clearUserCache();
-          set({ user: null, isAuthenticated: false, isOffline: false });
+          // If we have cached user but refresh failed → stay logged in with cache
+          // This covers the case where the backend itself is down
+        } else if (isNetworkError) {
+          // No connectivity — stay logged in with cached data
+          set({ isOffline: true });
         }
+        // Any other error → keep user logged in with cache, don't logout
       }
     } catch {
-      set({ user: null, isAuthenticated: false, isOffline: false });
+      // SecureStore read failure — can't do anything useful, show login
+      set({ user: null, isAuthenticated: false });
     } finally {
       set({ isLoading: false });
     }

@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -6,21 +6,26 @@ import {
   TouchableOpacity,
   Dimensions,
   StatusBar,
+  Modal,
+  FlatList,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, {
+import Animated2, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   runOnJS,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Svg, { Path, Rect } from "react-native-svg";
+import Svg, { Path, Rect, Circle } from "react-native-svg";
 import { useNavigation } from "@react-navigation/native";
+import { Image } from "expo-image";
 import { useTheme } from "@theme/index";
 import { Spacing, Layout, BorderRadius } from "@theme/spacing";
 import { usePlayerStore, usePlayerProgressStore } from "@store/playerStore";
+import type { Song } from "@app-types/index";
 import type { PlayerScreenProps } from "@app-types/navigation";
 
 const { width: W } = Dimensions.get("window");
@@ -28,87 +33,154 @@ const ARTWORK_SIZE = W - (Layout.screenPaddingH + Spacing[4]) * 2;
 const BAR_W = W - Layout.screenPaddingH * 2;
 const TRACK_H = 4;
 const THUMB_SIZE = 14;
-// FIX: centre thumb on track. Thumb top = -(THUMB_SIZE/2) + (TRACK_H/2)
-// The wrap has no paddingTop on the track itself, so this is purely geometric.
-const THUMB_TOP = -(THUMB_SIZE / 2) + TRACK_H / 2; // = -5
+const THUMB_TOP = -(THUMB_SIZE / 2) + TRACK_H / 2;
 
-const PlayIcon = ({ color }: { color: string }) => (
-  <Svg width={28} height={28} viewBox="0 0 24 24" fill={color}>
+// ── Icons ─────────────────────────────────────────────────────────────────────
+const PlayIcon = ({ c }: { c: string }) => (
+  <Svg width={28} height={28} viewBox="0 0 24 24" fill={c}>
     <Path d="M6 4.75L19.5 12L6 19.25V4.75Z" />
   </Svg>
 );
-const PauseIcon = ({ color }: { color: string }) => (
-  <Svg width={28} height={28} viewBox="0 0 24 24" fill={color}>
+const PauseIcon = ({ c }: { c: string }) => (
+  <Svg width={28} height={28} viewBox="0 0 24 24" fill={c}>
     <Rect x="5" y="4" width="4" height="16" rx="1" />
     <Rect x="15" y="4" width="4" height="16" rx="1" />
   </Svg>
 );
-const NextIcon = ({ color }: { color: string }) => (
-  <Svg width={36} height={36} viewBox="0 0 24 24" fill={color}>
+const NextIcon = ({ c }: { c: string }) => (
+  <Svg width={36} height={36} viewBox="0 0 24 24" fill={c}>
     <Path d="M5 4.75L16 12L5 19.25V4.75Z" />
     <Rect x="17" y="4" width="2.5" height="16" rx="1" />
   </Svg>
 );
-const PrevIcon = ({ color }: { color: string }) => (
-  <Svg width={36} height={36} viewBox="0 0 24 24" fill={color}>
+const PrevIcon = ({ c }: { c: string }) => (
+  <Svg width={36} height={36} viewBox="0 0 24 24" fill={c}>
     <Path d="M19 19.25L8 12L19 4.75V19.25Z" />
     <Rect x="4.5" y="4" width="2.5" height="16" rx="1" />
   </Svg>
 );
-const ShuffleIcon = ({ color, active }: { color: string; active: boolean }) => (
+const ShuffleIcon = ({ c, a }: { c: string; a: boolean }) => (
   <Svg
     width={22}
     height={22}
     viewBox="0 0 24 24"
     fill="none"
-    stroke={color}
-    strokeWidth={active ? 2.25 : 1.75}
+    stroke={c}
+    strokeWidth={a ? 2.25 : 1.75}
     strokeLinecap="round"
     strokeLinejoin="round"
   >
     <Path d="M16 3h5v5M4 20L21 3M16 21h5v-5M4 4l8 8" />
   </Svg>
 );
-const RepeatIcon = ({ color, active }: { color: string; active: boolean }) => (
+const RepeatIcon = ({ c, a }: { c: string; a: boolean }) => (
   <Svg
     width={22}
     height={22}
     viewBox="0 0 24 24"
     fill="none"
-    stroke={color}
-    strokeWidth={active ? 2.25 : 1.75}
+    stroke={c}
+    strokeWidth={a ? 2.25 : 1.75}
     strokeLinecap="round"
     strokeLinejoin="round"
   >
     <Path d="M17 2l4 4-4 4M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 01-4 4H3" />
   </Svg>
 );
-const ChevronDown = ({ color }: { color: string }) => (
+const ChevronDown = ({ c }: { c: string }) => (
   <Svg
     width={28}
     height={28}
     viewBox="0 0 24 24"
     fill="none"
-    stroke={color}
+    stroke={c}
     strokeWidth={2}
     strokeLinecap="round"
   >
     <Path d="M6 9l6 6 6-6" />
   </Svg>
 );
+const DotsIcon = ({ c }: { c: string }) => (
+  <Svg width={24} height={24} viewBox="0 0 24 24" fill={c}>
+    <Circle cx="12" cy="5" r="1.5" />
+    <Circle cx="12" cy="12" r="1.5" />
+    <Circle cx="12" cy="19" r="1.5" />
+  </Svg>
+);
+const QueueIcon = ({ c }: { c: string }) => (
+  <Svg
+    width={22}
+    height={22}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={c}
+    strokeWidth={1.75}
+    strokeLinecap="round"
+  >
+    <Path d="M3 6h18M3 12h18M3 18h12" />
+    <Path d="M17 15l3 3-3 3" />
+  </Svg>
+);
+const PlusQueueIcon = ({ c }: { c: string }) => (
+  <Svg
+    width={22}
+    height={22}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={c}
+    strokeWidth={1.75}
+    strokeLinecap="round"
+  >
+    <Path d="M3 6h18M3 12h12M3 18h9" />
+    <Path d="M16 14v6M13 17h6" />
+  </Svg>
+);
+const LyricsIcon = ({ c }: { c: string }) => (
+  <Svg
+    width={22}
+    height={22}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={c}
+    strokeWidth={1.75}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <Path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 00-1.3-3.2 4.2 4.2 0 00-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 00-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 00-.1 3.2A4.6 4.6 0 004 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" />
+  </Svg>
+);
+const DragIcon = ({ c }: { c: string }) => (
+  <Svg
+    width={20}
+    height={20}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={c}
+    strokeWidth={1.75}
+    strokeLinecap="round"
+  >
+    <Path d="M9 5h2M9 12h2M9 19h2M13 5h2M13 12h2M13 19h2" />
+  </Svg>
+);
 
-// ── Seek bar — isolated so only it re-renders on position ticks ───────────────
-function SeekBar({
-  onSeek,
-}: {
-  onSeek: (ms: number) => void;
-}): React.JSX.Element {
+// ── Format time ───────────────────────────────────────────────────────────────
+function fmt(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+}
+
+function artworkBg(id: string): string {
+  const hue = (id.charCodeAt(0) * 47) % 360;
+  return `hsl(${hue}, 35%, 25%)`;
+}
+
+// ── Seek bar ──────────────────────────────────────────────────────────────────
+function SeekBar({ onSeek }: { onSeek: (ms: number) => void }) {
   const { colors } = useTheme();
   const positionMs = usePlayerProgressStore((s) => s.positionMs);
   const durationMs = usePlayerProgressStore((s) => s.durationMs);
-
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
-  const thumbX = useSharedValue(progress * BAR_W);
+  const thumbX = useSharedValue(0);
   const dragging = useSharedValue(false);
 
   const pan = Gesture.Pan()
@@ -119,65 +191,55 @@ function SeekBar({
       thumbX.value = Math.max(0, Math.min(BAR_W, e.x));
     })
     .onEnd(() => {
-      const ms = (thumbX.value / BAR_W) * durationMs;
       dragging.value = false;
-      runOnJS(onSeek)(ms);
+      runOnJS(onSeek)((thumbX.value / BAR_W) * durationMs);
     });
 
   const fillStyle = useAnimatedStyle(() => ({
     width: dragging.value ? thumbX.value : progress * BAR_W,
   }));
 
-  // Thumb x = left edge of track + fill width - half thumb size, clamped to bar
   const thumbStyle = useAnimatedStyle(() => {
     const fillW = dragging.value ? thumbX.value : progress * BAR_W;
-    const clampedX = Math.max(
-      0,
-      Math.min(BAR_W - THUMB_SIZE, fillW - THUMB_SIZE / 2),
-    );
     return {
       transform: [
-        { translateX: clampedX },
+        {
+          translateX: Math.max(
+            0,
+            Math.min(BAR_W - THUMB_SIZE, fillW - THUMB_SIZE / 2),
+          ),
+        },
         { scale: withSpring(dragging.value ? 1.3 : 1, { damping: 15 }) },
       ],
     };
   });
 
-  const fmt = (ms: number) => {
-    const s = Math.floor(ms / 1000);
-    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
-  };
-
   return (
     <GestureDetector gesture={pan}>
-      {/* Extra vertical padding for easier touch target without shifting the track */}
-      <View style={seekStyles.touchArea}>
-        <View style={seekStyles.trackWrap}>
-          {/* Track background */}
-          <View style={[seekStyles.track, { backgroundColor: colors.border }]}>
-            {/* Fill */}
-            <Animated.View
+      <View style={seekSt.touchArea}>
+        <View style={seekSt.trackWrap}>
+          <View style={[seekSt.track, { backgroundColor: colors.border }]}>
+            <Animated2.View
               style={[
-                seekStyles.fill,
+                seekSt.fill,
                 { backgroundColor: colors.brand },
                 fillStyle,
               ]}
             />
           </View>
-          {/* Thumb — absolutely positioned, centred on track using THUMB_TOP */}
-          <Animated.View
+          <Animated2.View
             style={[
-              seekStyles.thumb,
+              seekSt.thumb,
               { backgroundColor: colors.brand, top: THUMB_TOP },
               thumbStyle,
             ]}
           />
         </View>
-        <View style={seekStyles.labels}>
-          <Text style={[seekStyles.time, { color: colors.textSecondary }]}>
+        <View style={seekSt.labels}>
+          <Text style={[seekSt.time, { color: colors.textSecondary }]}>
             {fmt(positionMs)}
           </Text>
-          <Text style={[seekStyles.time, { color: colors.textSecondary }]}>
+          <Text style={[seekSt.time, { color: colors.textSecondary }]}>
             {fmt(durationMs)}
           </Text>
         </View>
@@ -186,10 +248,8 @@ function SeekBar({
   );
 }
 
-const seekStyles = StyleSheet.create({
-  // Extra vertical padding for hit area without affecting visual alignment
+const seekSt = StyleSheet.create({
   touchArea: { width: "100%", paddingVertical: Spacing[3] },
-  // The track wrap is the reference for absolute-positioned thumb
   trackWrap: { position: "relative", height: TRACK_H },
   track: {
     height: TRACK_H,
@@ -202,7 +262,6 @@ const seekStyles = StyleSheet.create({
     width: THUMB_SIZE,
     height: THUMB_SIZE,
     borderRadius: THUMB_SIZE / 2,
-    // top is set inline using THUMB_TOP constant
   },
   labels: {
     flexDirection: "row",
@@ -212,33 +271,467 @@ const seekStyles = StyleSheet.create({
   time: { fontSize: 12, fontWeight: "500" },
 });
 
-// ── Animated artwork ──────────────────────────────────────────────────────────
+// ── Artwork ───────────────────────────────────────────────────────────────────
 function PlayerArtwork({
-  title,
-  bg,
+  song,
   isPlaying,
 }: {
-  title: string;
-  bg: string;
+  song: Song | null;
   isPlaying: boolean;
 }) {
+  const bg = song ? artworkBg(song.id) : "#1C1A16";
   const artStyle = useAnimatedStyle(() => ({
     transform: [{ scale: withSpring(isPlaying ? 1 : 0.875, { damping: 14 }) }],
   }));
   return (
-    <Animated.View
+    <Animated2.View
       style={[
-        styles.artwork,
-        { backgroundColor: bg, width: ARTWORK_SIZE, height: ARTWORK_SIZE },
+        art.wrap,
+        { width: ARTWORK_SIZE, height: ARTWORK_SIZE, backgroundColor: bg },
         artStyle,
       ]}
     >
-      <Text style={[styles.artworkLetter, { fontSize: ARTWORK_SIZE * 0.32 }]}>
-        {title.charAt(0).toUpperCase()}
-      </Text>
-    </Animated.View>
+      {song?.artworkUrl ? (
+        <Image
+          source={{ uri: song.artworkUrl }}
+          style={StyleSheet.absoluteFillObject}
+          contentFit="cover"
+        />
+      ) : (
+        <Text style={[art.letter, { fontSize: ARTWORK_SIZE * 0.32 }]}>
+          {song?.title.charAt(0).toUpperCase() ?? "♪"}
+        </Text>
+      )}
+    </Animated2.View>
   );
 }
+
+const art = StyleSheet.create({
+  wrap: {
+    borderRadius: BorderRadius["2xl"],
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  letter: { color: "rgba(255,255,255,0.45)", fontWeight: "700" },
+});
+
+// ── Dots menu ─────────────────────────────────────────────────────────────────
+interface DotsMenuProps {
+  visible: boolean;
+  onClose: () => void;
+  onShowQueue: () => void;
+  onAddToQueue: () => void;
+  lyricsOn: boolean;
+  onToggleLyrics: () => void;
+}
+
+function DotsMenu({
+  visible,
+  onClose,
+  onShowQueue,
+  onAddToQueue,
+  lyricsOn,
+  onToggleLyrics,
+}: DotsMenuProps) {
+  const { colors, typography } = useTheme();
+  const currentSong = usePlayerStore((s) => s.currentSong);
+
+  const items = [
+    {
+      icon: <QueueIcon c={colors.textPrimary} />,
+      label: "View queue",
+      onPress: () => {
+        onClose();
+        onShowQueue();
+      },
+    },
+    {
+      icon: <PlusQueueIcon c={colors.textPrimary} />,
+      label: currentSong
+        ? `Add "${currentSong.title}" to queue`
+        : "Add to queue",
+      onPress: () => {
+        if (currentSong) {
+          Alert.alert(
+            "Added",
+            `"${currentSong.title}" will repeat in the queue`,
+          );
+        }
+        onClose();
+        onAddToQueue();
+      },
+    },
+    {
+      icon: <LyricsIcon c={lyricsOn ? colors.brand : colors.textPrimary} />,
+      label: lyricsOn ? "Hide lyrics" : "Show lyrics",
+      onPress: () => {
+        onToggleLyrics();
+        onClose();
+      },
+      accent: lyricsOn,
+    },
+  ];
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        style={menuSt.overlay}
+        onPress={onClose}
+        activeOpacity={1}
+      >
+        <TouchableOpacity
+          style={[
+            menuSt.card,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+          activeOpacity={1}
+        >
+          {currentSong && (
+            <View
+              style={[menuSt.songPreview, { borderBottomColor: colors.border }]}
+            >
+              <View
+                style={[
+                  menuSt.previewArt,
+                  { backgroundColor: artworkBg(currentSong.id) },
+                ]}
+              >
+                {currentSong.artworkUrl && (
+                  <Image
+                    source={{ uri: currentSong.artworkUrl }}
+                    style={StyleSheet.absoluteFillObject}
+                    contentFit="cover"
+                  />
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[typography.labelLg, { color: colors.textPrimary }]}
+                  numberOfLines={1}
+                >
+                  {currentSong.title}
+                </Text>
+                <Text
+                  style={[typography.labelSm, { color: colors.textSecondary }]}
+                  numberOfLines={1}
+                >
+                  {currentSong.artist}
+                </Text>
+              </View>
+            </View>
+          )}
+          {items.map((item, i) => (
+            <TouchableOpacity
+              key={i}
+              style={[
+                menuSt.item,
+                i < items.length - 1 && {
+                  borderBottomColor: colors.border,
+                  borderBottomWidth: StyleSheet.hairlineWidth,
+                },
+              ]}
+              onPress={item.onPress}
+              activeOpacity={0.7}
+            >
+              {item.icon}
+              <Text
+                style={[
+                  typography.bodyMd,
+                  {
+                    color: item.accent ? colors.brand : colors.textPrimary,
+                    flex: 1,
+                  },
+                ]}
+              >
+                {item.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+const menuSt = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    justifyContent: "flex-end",
+    paddingBottom: Spacing[10],
+  },
+  card: {
+    marginHorizontal: Layout.screenPaddingH,
+    borderRadius: BorderRadius["2xl"],
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  songPreview: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing[3],
+    padding: Spacing[4],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  previewArt: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
+  },
+  item: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing[4],
+    padding: Spacing[4],
+  },
+});
+
+// ── Queue item ─────────────────────────────────────────────────────────────────
+interface QueueItemProps {
+  song: Song;
+  index: number;
+  isActive: boolean;
+  onPress: () => void;
+  onRemove: () => void;
+}
+
+function QueueItem({
+  song,
+  index,
+  isActive,
+  onPress,
+  onRemove,
+}: QueueItemProps) {
+  const { colors, typography } = useTheme();
+  return (
+    <TouchableOpacity
+      style={[
+        qSt.row,
+        { backgroundColor: isActive ? colors.brand + "14" : "transparent" },
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[qSt.art, { backgroundColor: artworkBg(song.id) }]}>
+        {song.artworkUrl && (
+          <Image
+            source={{ uri: song.artworkUrl }}
+            style={StyleSheet.absoluteFillObject}
+            contentFit="cover"
+          />
+        )}
+        {isActive && (
+          <View
+            style={[
+              StyleSheet.absoluteFillObject,
+              {
+                backgroundColor: "rgba(0,0,0,0.4)",
+                alignItems: "center",
+                justifyContent: "center",
+              },
+            ]}
+          >
+            <PlayIcon c="white" />
+          </View>
+        )}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text
+          style={[
+            typography.labelLg,
+            { color: isActive ? colors.brand : colors.textPrimary },
+          ]}
+          numberOfLines={1}
+        >
+          {song.title}
+        </Text>
+        <Text
+          style={[typography.labelSm, { color: colors.textSecondary }]}
+          numberOfLines={1}
+        >
+          {song.artist}
+        </Text>
+      </View>
+      <TouchableOpacity
+        onPress={onRemove}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      >
+        <Svg
+          width={18}
+          height={18}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={colors.textTertiary}
+          strokeWidth={2}
+          strokeLinecap="round"
+        >
+          <Path d="M18 6L6 18M6 6l12 12" />
+        </Svg>
+      </TouchableOpacity>
+      <View style={{ paddingLeft: Spacing[2] }}>
+        <DragIcon c={colors.textTertiary} />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const qSt = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing[3],
+    paddingHorizontal: Layout.screenPaddingH,
+    paddingVertical: Spacing[2.5],
+  },
+  art: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
+  },
+});
+
+// ── Queue modal ───────────────────────────────────────────────────────────────
+function QueueModal({
+  visible,
+  onClose,
+}: {
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const { colors, typography } = useTheme();
+  const queue = usePlayerStore((s) => s.queue);
+  const queueIndex = usePlayerStore((s) => s.queueIndex);
+  const { skipToIndex, removeFromQueue, reorderQueue, clearQueue } =
+    usePlayerStore();
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView
+        style={[qModalSt.safe, { backgroundColor: colors.background }]}
+      >
+        <View style={[qModalSt.header, { borderBottomColor: colors.border }]}>
+          <Text style={[typography.h2, { color: colors.textPrimary }]}>
+            Up Next
+          </Text>
+          <View style={qModalSt.headerRight}>
+            <TouchableOpacity
+              onPress={() => {
+                void clearQueue();
+                onClose();
+              }}
+              style={{ marginRight: Spacing[4] }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={[typography.labelMd, { color: colors.error }]}>
+                Clear
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={[typography.labelMd, { color: colors.brand }]}>
+                Done
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Text
+          style={[
+            typography.labelSm,
+            {
+              color: colors.textTertiary,
+              paddingHorizontal: Layout.screenPaddingH,
+              paddingTop: Spacing[3],
+              paddingBottom: Spacing[1],
+            },
+          ]}
+        >
+          {queue.length} songs · Long-press drag handle to reorder
+        </Text>
+
+        <FlatList
+          data={queue}
+          keyExtractor={(item, i) => `${item.id}-${i}`}
+          renderItem={({ item, index }) => (
+            <QueueItem
+              song={item}
+              index={index}
+              isActive={index === queueIndex}
+              onPress={() => void skipToIndex(index)}
+              onRemove={() => removeFromQueue(index)}
+            />
+          )}
+          ItemSeparatorComponent={() => (
+            <View
+              style={{
+                height: StyleSheet.hairlineWidth,
+                backgroundColor: colors.border,
+                marginLeft: Layout.screenPaddingH + 48 + Spacing[3],
+              }}
+            />
+          )}
+          contentContainerStyle={{ paddingBottom: Spacing[16] }}
+        />
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+const qModalSt = StyleSheet.create({
+  safe: { flex: 1 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Layout.screenPaddingH,
+    paddingVertical: Spacing[4],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  headerRight: { flexDirection: "row", alignItems: "center" },
+});
+
+// ── Lyrics placeholder ────────────────────────────────────────────────────────
+function LyricsView({ song }: { song: Song | null }) {
+  const { colors, typography } = useTheme();
+  return (
+    <View style={lyricsSt.wrap}>
+      <Text
+        style={[
+          typography.bodyMd,
+          { color: colors.textSecondary, textAlign: "center" },
+        ]}
+      >
+        {song
+          ? `Lyrics for "${song.title}" — coming in Phase 2`
+          : "No track playing"}
+      </Text>
+    </View>
+  );
+}
+
+const lyricsSt = StyleSheet.create({
+  wrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Layout.screenPaddingH,
+  },
+});
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export function PlayerScreen(_props: PlayerScreenProps): React.JSX.Element {
@@ -256,6 +749,11 @@ export function PlayerScreen(_props: PlayerScreenProps): React.JSX.Element {
   const seekTo = usePlayerStore((s) => s.seekTo);
   const cycleRepeatMode = usePlayerStore((s) => s.cycleRepeatMode);
   const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
+  const addToQueue = usePlayerStore((s) => s.addToQueue);
+
+  const [showDots, setShowDots] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
+  const [lyricsOn, setLyricsOn] = useState(false);
 
   const handleSeek = useCallback(
     (ms: number) => {
@@ -263,8 +761,38 @@ export function PlayerScreen(_props: PlayerScreenProps): React.JSX.Element {
     },
     [seekTo],
   );
-  const hue = currentSong ? (currentSong.id.charCodeAt(0) * 47) % 360 : 30;
-  const artBg = `hsl(${hue}, 35%, 25%)`;
+
+  // ── Swipe-right-to-dismiss ───────────────────────────────────────────────────
+  // Swiping right anywhere on the screen (outside the seek bar / queue button,
+  // which have their own pan gestures) closes the player and returns to the
+  // previous screen — mirroring the swipe-down dismiss already provided by the
+  // modal presentation in RootNavigator.
+  const screenTranslateX = useSharedValue(0);
+  const SWIPE_DISMISS_THRESHOLD = 80;
+
+  const goBack = useCallback(() => navigation.goBack(), [navigation]);
+
+  const swipeGesture = Gesture.Pan()
+    .activeOffsetX([20, 999]) // only activate for clear rightward drags
+    .failOffsetY([-15, 15]) // let vertical scrolls/seek-bar gestures win
+    .onUpdate((e) => {
+      if (e.translationX > 0) {
+        screenTranslateX.value = e.translationX;
+      }
+    })
+    .onEnd((e) => {
+      if (e.translationX > SWIPE_DISMISS_THRESHOLD) {
+        screenTranslateX.value = withSpring(W, { damping: 20 });
+        runOnJS(goBack)();
+      } else {
+        screenTranslateX.value = withSpring(0, { damping: 18 });
+      }
+    });
+
+  const screenAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: screenTranslateX.value }],
+    opacity: 1 - Math.min(screenTranslateX.value / W, 0.5),
+  }));
 
   return (
     <LinearGradient
@@ -273,126 +801,164 @@ export function PlayerScreen(_props: PlayerScreenProps): React.JSX.Element {
     >
       <SafeAreaView style={styles.safe}>
         <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
-        <View style={styles.container}>
-          <View style={styles.header}>
+        <GestureDetector gesture={swipeGesture}>
+          <Animated2.View style={[styles.container, screenAnimStyle]}>
+            {/* Header */}
+            <View style={styles.header}>
+              <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <ChevronDown c={colors.textSecondary} />
+              </TouchableOpacity>
+              <View style={styles.headerCenter}>
+                <Text
+                  style={[
+                    typography.labelMd,
+                    {
+                      color: colors.textSecondary,
+                      textTransform: "uppercase",
+                      letterSpacing: 1.2,
+                    },
+                  ]}
+                >
+                  Now Playing
+                </Text>
+                {currentSong?.provider === "local" && (
+                  <Text style={[typography.labelXs, { color: colors.brand }]}>
+                    📱 Local
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowDots(true)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <DotsIcon c={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Artwork or Lyrics */}
+            {lyricsOn ? (
+              <LyricsView song={currentSong} />
+            ) : (
+              <View style={styles.artworkWrap}>
+                <PlayerArtwork song={currentSong} isPlaying={isPlaying} />
+              </View>
+            )}
+
+            {/* Song info */}
+            <View style={styles.songInfo}>
+              <Text
+                style={[typography.h1, { color: colors.textPrimary }]}
+                numberOfLines={1}
+              >
+                {currentSong?.title ?? "No track selected"}
+              </Text>
+              <Text
+                style={[typography.bodyLg, { color: colors.textSecondary }]}
+                numberOfLines={1}
+              >
+                {currentSong?.artist ?? "—"}
+              </Text>
+            </View>
+
+            {/* Seek bar */}
+            <View style={styles.seekWrap}>
+              <SeekBar onSeek={handleSeek} />
+            </View>
+
+            {/* Controls */}
+            <View style={styles.controls}>
+              <TouchableOpacity
+                onPress={toggleShuffle}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <ShuffleIcon
+                  c={isShuffle ? colors.brand : colors.textTertiary}
+                  a={isShuffle}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => void skipToPrevious()}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <PrevIcon c={colors.textPrimary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.playBtn, { backgroundColor: colors.brand }]}
+                onPress={() => void togglePlayPause()}
+                activeOpacity={0.85}
+              >
+                {isLoading ? (
+                  <View style={styles.loadingDot} />
+                ) : isPlaying ? (
+                  <PauseIcon c={colors.textOnBrand} />
+                ) : (
+                  <PlayIcon c={colors.textOnBrand} />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => void skipToNext()}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <NextIcon c={colors.textPrimary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={cycleRepeatMode}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <RepeatIcon
+                  c={repeatMode !== "off" ? colors.brand : colors.textTertiary}
+                  a={repeatMode !== "off"}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Queue shortcut */}
             <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={[styles.queueBtn, { borderColor: colors.border }]}
+              onPress={() => setShowQueue(true)}
+              activeOpacity={0.7}
             >
-              <ChevronDown color={colors.textSecondary} />
+              <QueueIcon c={colors.textSecondary} />
+              <Text
+                style={[typography.labelSm, { color: colors.textSecondary }]}
+              >
+                View queue
+              </Text>
             </TouchableOpacity>
-            <Text
-              style={[
-                typography.labelMd,
-                {
-                  color: colors.textSecondary,
-                  textTransform: "uppercase",
-                  letterSpacing: 1.2,
-                },
-              ]}
-            >
-              Now Playing
-            </Text>
-            <View style={{ width: 28 }} />
-          </View>
 
-          <View style={styles.artworkWrap}>
-            <PlayerArtwork
-              title={currentSong?.title ?? "♪"}
-              bg={artBg}
-              isPlaying={isPlaying}
-            />
-          </View>
-
-          <View style={styles.songInfo}>
-            <Text
-              style={[typography.h1, { color: colors.textPrimary }]}
-              numberOfLines={1}
-            >
-              {currentSong?.title ?? "No track selected"}
-            </Text>
-            <Text
-              style={[typography.bodyLg, { color: colors.textSecondary }]}
-              numberOfLines={1}
-            >
-              {currentSong?.artist ?? "—"}
-            </Text>
-            {currentSong?.provider === "local" && (
+            {currentSong?.album && (
               <Text
                 style={[
-                  typography.labelSm,
-                  { color: colors.brand, marginTop: 2 },
+                  typography.labelMd,
+                  {
+                    color: colors.textTertiary,
+                    textAlign: "center",
+                    marginTop: Spacing[2],
+                  },
                 ]}
+                numberOfLines={1}
               >
-                📱 On this device
+                {currentSong.album}
               </Text>
             )}
-          </View>
+          </Animated2.View>
+        </GestureDetector>
 
-          <View style={styles.seekWrap}>
-            <SeekBar onSeek={handleSeek} />
-          </View>
-
-          <View style={styles.controls}>
-            <TouchableOpacity
-              onPress={toggleShuffle}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <ShuffleIcon
-                color={isShuffle ? colors.brand : colors.textTertiary}
-                active={isShuffle}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => void skipToPrevious()}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <PrevIcon color={colors.textPrimary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.playBtn, { backgroundColor: colors.brand }]}
-              onPress={() => void togglePlayPause()}
-              activeOpacity={0.85}
-            >
-              {isLoading ? (
-                <View style={styles.loadingDot} />
-              ) : isPlaying ? (
-                <PauseIcon color={colors.textOnBrand} />
-              ) : (
-                <PlayIcon color={colors.textOnBrand} />
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => void skipToNext()}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <NextIcon color={colors.textPrimary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={cycleRepeatMode}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <RepeatIcon
-                color={
-                  repeatMode !== "off" ? colors.brand : colors.textTertiary
-                }
-                active={repeatMode !== "off"}
-              />
-            </TouchableOpacity>
-          </View>
-
-          {/* {currentSong?.album && (
-            <Text
-              style={[
-                typography.labelMd,
-                { color: colors.textTertiary, textAlign: "center" },
-              ]}
-              numberOfLines={1}
-            >
-              {currentSong.album}
-            </Text>
-          )} */}
-        </View>
+        {/* Modals — outside the swipeable area so they aren't affected by translateX */}
+        <DotsMenu
+          visible={showDots}
+          onClose={() => setShowDots(false)}
+          onShowQueue={() => setShowQueue(true)}
+          onAddToQueue={() => {
+            if (currentSong) addToQueue(currentSong);
+          }}
+          lyricsOn={lyricsOn}
+          onToggleLyrics={() => setLyricsOn((v) => !v)}
+        />
+        <QueueModal visible={showQueue} onClose={() => setShowQueue(false)} />
       </SafeAreaView>
     </LinearGradient>
   );
@@ -404,29 +970,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: Layout.screenPaddingH + Spacing[2],
-    paddingBottom: Spacing[8],
+    paddingBottom: Spacing[6],
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingTop: Spacing[4],
-    paddingBottom: Spacing[6],
+    paddingBottom: Spacing[4],
   },
-  artworkWrap: { alignItems: "center", marginBottom: Spacing[8] },
-  artwork: {
-    borderRadius: BorderRadius["2xl"],
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  artworkLetter: { color: "rgba(255,255,255,0.45)", fontWeight: "700" },
-  songInfo: { marginBottom: Spacing[4], gap: Spacing[1] },
-  seekWrap: { marginBottom: Spacing[6] },
+  headerCenter: { alignItems: "center", gap: 2 },
+  artworkWrap: { alignItems: "center", marginBottom: Spacing[6] },
+  songInfo: { marginBottom: Spacing[2], gap: Spacing[1] },
+  seekWrap: { marginBottom: Spacing[4] },
   controls: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: Spacing[6],
+    marginBottom: Spacing[4],
   },
   playBtn: {
     width: 68,
@@ -440,5 +1001,15 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     backgroundColor: "rgba(255,255,255,0.5)",
+  },
+  queueBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing[2],
+    paddingVertical: Spacing[2.5],
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    marginBottom: Spacing[2],
   },
 });

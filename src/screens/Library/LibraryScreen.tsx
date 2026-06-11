@@ -1,257 +1,1110 @@
-import React, { useState, useCallback } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  memo,
+  useEffect,
+  useRef,
+} from "react";
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, Alert, RefreshControl,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path, Circle } from 'react-native-svg';
-import { useQuery } from '@tanstack/react-query';
-import { useTheme } from '@theme/index';
-import { Layout, Spacing, BorderRadius } from '@theme/spacing';
-import { usePlayerStore } from '@store/playerStore';
-import { getLocalTracks, getLocalMusicEnabled, requestMusicPermission } from '@services/local/localMusicService';
-import { QUERY_KEYS } from '@constants/index';
-import type { Song } from '@app-types/index';
-import type { LibraryScreenProps } from '@app-types/navigation';
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  TextInput,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  Linking,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, { Path, Circle } from "react-native-svg";
+import { Image } from "expo-image";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTheme } from "@theme/index";
+import { Layout, Spacing, BorderRadius } from "@theme/spacing";
+import { usePlayerStore } from "@store/playerStore";
+import {
+  useLocalPlaylistStore,
+  type LocalPlaylist,
+} from "@store/localPlaylistStore";
+import {
+  getLocalTracks,
+  getLocalMusicEnabled,
+  getMusicPermissionStatus,
+  requestMusicPermission,
+  setLocalMusicEnabled,
+} from "@services/local/localMusicService";
+import { QUERY_KEYS } from "@constants/index";
+import type { Song } from "@app-types/index";
+import type { LibraryScreenProps } from "@app-types/navigation";
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
-const PlayIcon = ({ color }: { color: string }) => (
-  <Svg width={18} height={18} viewBox="0 0 24 24" fill={color}><Path d="M6 4.75L19.5 12L6 19.25V4.75Z" /></Svg>
+const PlayIcon = ({ c, s = 18 }: { c: string; s?: number }) => (
+  <Svg width={s} height={s} viewBox="0 0 24 24" fill={c}>
+    <Path d="M6 4.75L19.5 12L6 19.25V4.75Z" />
+  </Svg>
 );
-const MusicIcon = ({ color }: { color: string }) => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
+const MusicIcon = ({ c }: { c: string }) => (
+  <Svg
+    width={20}
+    height={20}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={c}
+    strokeWidth={1.75}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <Path d="M9 18V5l12-2v13" />
     <Circle cx="6" cy="18" r="3" />
     <Circle cx="18" cy="16" r="3" />
   </Svg>
 );
-const FolderIcon = ({ color }: { color: string }) => (
-  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
-    <Path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+const PlusIcon = ({ c }: { c: string }) => (
+  <Svg
+    width={22}
+    height={22}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={c}
+    strokeWidth={2.5}
+    strokeLinecap="round"
+  >
+    <Path d="M12 5v14M5 12h14" />
+  </Svg>
+);
+const SearchIcon = ({ c }: { c: string }) => (
+  <Svg
+    width={18}
+    height={18}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={c}
+    strokeWidth={2}
+    strokeLinecap="round"
+  >
+    <Circle cx="11" cy="11" r="8" />
+    <Path d="M21 21l-4.35-4.35" />
+  </Svg>
+);
+const TrashIcon = ({ c }: { c: string }) => (
+  <Svg
+    width={18}
+    height={18}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={c}
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <Path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
+  </Svg>
+);
+const ChevronRight = ({ c }: { c: string }) => (
+  <Svg
+    width={18}
+    height={18}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={c}
+    strokeWidth={2}
+    strokeLinecap="round"
+  >
+    <Path d="M9 18l6-6-6-6" />
   </Svg>
 );
 
-// ── Format duration ───────────────────────────────────────────────────────────
-function formatDuration(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  return `${min}:${sec.toString().padStart(2, '0')}`;
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmt(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+}
+function artBg(id: string): string {
+  return `hsl(${(id.charCodeAt(id.length > 6 ? 6 : 0) * 37) % 360}, 30%, 28%)`;
 }
 
 // ── Song row ──────────────────────────────────────────────────────────────────
-interface SongRowProps {
+const ROW_H = 68;
+
+const SongRow = memo(function SongRow({
+  song,
+  index,
+  isPlaying,
+  onPress,
+  onLongPress,
+}: {
   song: Song;
   index: number;
   isPlaying: boolean;
   onPress: () => void;
-}
-
-function SongRow({ song, index, isPlaying, onPress }: SongRowProps): React.JSX.Element {
-  const { colors, typography } = useTheme();
-  return (
-    <TouchableOpacity style={styles.songRow} onPress={onPress} activeOpacity={0.7}>
-      {/* Index / playing indicator */}
-      <View style={[styles.songIndex, { backgroundColor: isPlaying ? colors.brand + '18' : 'transparent' }]}>
-        {isPlaying
-          ? <PlayIcon color={colors.brand} />
-          : <Text style={[typography.labelMd, { color: colors.textTertiary, fontVariant: ['tabular-nums'] }]}>
-            {(index + 1).toString().padStart(2, ' ')}
-          </Text>
-        }
-      </View>
-
-      {/* Artwork placeholder */}
-      <View style={[styles.songArtwork, { backgroundColor: `hsl(${(song.id.charCodeAt(6) ?? 0) * 37 % 360},30%,28%)` }]}>
-        <MusicIcon color="rgba(255,255,255,0.5)" />
-      </View>
-
-      {/* Title + artist */}
-      <View style={styles.songMeta}>
-        <Text style={[typography.labelLg, { color: isPlaying ? colors.brand : colors.textPrimary }]} numberOfLines={1}>
-          {song.title}
-        </Text>
-        <Text style={[typography.labelSm, { color: colors.textSecondary }]} numberOfLines={1}>
-          {song.artist}
-        </Text>
-      </View>
-
-      {/* Duration */}
-      <Text style={[typography.labelSm, { color: colors.textTertiary, fontVariant: ['tabular-nums'] }]}>
-        {formatDuration(song.durationMs)}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-// ── Tab button ────────────────────────────────────────────────────────────────
-interface TabProps { label: string; active: boolean; onPress: () => void }
-
-function Tab({ label, active, onPress }: TabProps): React.JSX.Element {
+  onLongPress?: () => void;
+}) {
   const { colors, typography } = useTheme();
   return (
     <TouchableOpacity
-      style={[styles.tab, active && { borderBottomColor: colors.brand, borderBottomWidth: 2 }]}
+      style={[styles.songRow, { height: ROW_H }]}
       onPress={onPress}
+      onLongPress={onLongPress}
       activeOpacity={0.7}
     >
-      <Text style={[typography.labelMd, { color: active ? colors.brand : colors.textTertiary, fontWeight: active ? '600' : '400' }]}>
-        {label}
+      <View style={styles.indexWrap}>
+        {isPlaying ? (
+          <PlayIcon c={colors.brand} s={16} />
+        ) : (
+          <Text
+            style={[
+              typography.labelSm,
+              { color: colors.textTertiary, fontVariant: ["tabular-nums"] },
+            ]}
+          >
+            {index + 1}
+          </Text>
+        )}
+      </View>
+      <View style={[styles.artWrap, { backgroundColor: artBg(song.id) }]}>
+        {song.artworkUrl ? (
+          <Image
+            source={{ uri: song.artworkUrl }}
+            style={styles.artImg}
+            contentFit="cover"
+            transition={200}
+          />
+        ) : (
+          <MusicIcon c="rgba(255,255,255,0.45)" />
+        )}
+      </View>
+      <View style={styles.songMeta}>
+        <Text
+          style={[
+            typography.labelLg,
+            { color: isPlaying ? colors.brand : colors.textPrimary },
+          ]}
+          numberOfLines={1}
+        >
+          {song.title}
+        </Text>
+        <Text
+          style={[typography.labelSm, { color: colors.textSecondary }]}
+          numberOfLines={1}
+        >
+          {song.artist}
+          {song.album ? ` · ${song.album}` : ""}
+        </Text>
+      </View>
+      <Text
+        style={[
+          typography.labelSm,
+          { color: colors.textTertiary, fontVariant: ["tabular-nums"] },
+        ]}
+      >
+        {fmt(song.durationMs)}
       </Text>
     </TouchableOpacity>
   );
+});
+
+// ── Cross-platform text input modal ───────────────────────────────────────────
+// Alert.prompt is iOS-only. This works on Android too.
+interface TextInputModalProps {
+  visible: boolean;
+  title: string;
+  placeholder: string;
+  onCancel: () => void;
+  onSubmit: (value: string) => void;
 }
 
-// ── Local music tab ───────────────────────────────────────────────────────────
-function LocalMusicTab(): React.JSX.Element {
+function TextInputModal({
+  visible,
+  title,
+  placeholder,
+  onCancel,
+  onSubmit,
+}: TextInputModalProps) {
   const { colors, typography } = useTheme();
+  const [value, setValue] = useState("");
+  const inputRef = useRef<TextInput>(null);
+
+  // Delay focus so the modal animation finishes first — required on Android
+  useEffect(() => {
+    if (visible) {
+      setValue("");
+      const t = setTimeout(() => inputRef.current?.focus(), 350);
+      return () => clearTimeout(t);
+    }
+  }, [visible]);
+
+  const handleSubmit = () => {
+    if (!value.trim()) return;
+    onSubmit(value.trim());
+    setValue("");
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onCancel}
+    >
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <View
+          style={[
+            styles.modalCard,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <Text
+            style={[
+              typography.h3,
+              { color: colors.textPrimary, marginBottom: Spacing[4] },
+            ]}
+          >
+            {title}
+          </Text>
+
+          <View
+            style={[
+              styles.modalInput,
+              {
+                borderColor: colors.brand,
+                backgroundColor: colors.surfaceElevated,
+              },
+            ]}
+          >
+            <TextInput
+              ref={inputRef}
+              style={[
+                typography.bodyMd,
+                { color: colors.textPrimary, paddingVertical: 0, flex: 1 },
+              ]}
+              placeholder={placeholder}
+              placeholderTextColor={colors.textTertiary}
+              value={value}
+              onChangeText={setValue}
+              returnKeyType="done"
+              onSubmitEditing={handleSubmit}
+              // Android-specific: ensure keyboard shows
+              autoFocus={Platform.OS === "ios"}
+              blurOnSubmit={false}
+            />
+          </View>
+
+          <View style={styles.modalBtns}>
+            <TouchableOpacity
+              style={[styles.modalBtn, { borderColor: colors.border }]}
+              onPress={() => {
+                setValue("");
+                onCancel();
+              }}
+            >
+              <Text
+                style={[typography.labelLg, { color: colors.textSecondary }]}
+              >
+                Cancel
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.modalBtn,
+                { backgroundColor: colors.brand, borderColor: colors.brand },
+              ]}
+              onPress={handleSubmit}
+            >
+              <Text
+                style={[
+                  typography.labelLg,
+                  { color: colors.textOnBrand, fontWeight: "700" },
+                ]}
+              >
+                Create
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ── Add-to-playlist sheet ─────────────────────────────────────────────────────
+interface AddSheetProps {
+  visible: boolean;
+  song: Song | null;
+  onClose: () => void;
+}
+
+function AddToPlaylistSheet({ visible, song, onClose }: AddSheetProps) {
+  const { colors, typography } = useTheme();
+  const { playlists, addSong, createPlaylist } = useLocalPlaylistStore();
+  const [showCreate, setShowCreate] = useState(false);
+
+  const handleAdd = async (id: string) => {
+    if (!song) return;
+    await addSong(id, song);
+    Alert.alert("Added", `"${song.title}" added to playlist`);
+    onClose();
+  };
+
+  const handleCreate = async (name: string) => {
+    if (!song) return;
+    const pl = await createPlaylist(name);
+    await addSong(pl.id, song);
+    Alert.alert("Done", `Added to "${pl.name}"`);
+    setShowCreate(false);
+    onClose();
+  };
+
+  return (
+    <>
+      <Modal
+        visible={visible && !showCreate}
+        transparent
+        animationType="slide"
+        onRequestClose={onClose}
+      >
+        <TouchableOpacity
+          style={styles.sheetOverlay}
+          onPress={onClose}
+          activeOpacity={1}
+        >
+          <View
+            style={[
+              styles.sheet,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Text
+              style={[
+                typography.h3,
+                { color: colors.textPrimary, marginBottom: Spacing[1] },
+              ]}
+            >
+              Add to Playlist
+            </Text>
+            {song && (
+              <Text
+                style={[
+                  typography.bodySm,
+                  { color: colors.textSecondary, marginBottom: Spacing[4] },
+                ]}
+              >
+                "{song.title}"
+              </Text>
+            )}
+
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => setShowCreate(true)}
+            >
+              <View
+                style={[styles.sheetIcon, { backgroundColor: colors.brand }]}
+              >
+                <PlusIcon c={colors.textOnBrand} />
+              </View>
+              <Text style={[typography.labelLg, { color: colors.textPrimary }]}>
+                New Playlist
+              </Text>
+            </TouchableOpacity>
+
+            {playlists.map((p) => (
+              <TouchableOpacity
+                key={p.id}
+                style={styles.sheetRow}
+                onPress={() => void handleAdd(p.id)}
+              >
+                <View
+                  style={[styles.sheetIcon, { backgroundColor: artBg(p.id) }]}
+                >
+                  <MusicIcon c="rgba(255,255,255,0.6)" />
+                </View>
+                <View>
+                  <Text
+                    style={[typography.labelLg, { color: colors.textPrimary }]}
+                  >
+                    {p.name}
+                  </Text>
+                  <Text
+                    style={[
+                      typography.labelSm,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    {p.songs.length} songs
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+
+            {playlists.length === 0 && (
+              <Text
+                style={[
+                  typography.bodyMd,
+                  {
+                    color: colors.textTertiary,
+                    textAlign: "center",
+                    paddingVertical: Spacing[4],
+                  },
+                ]}
+              >
+                No playlists yet. Create one above.
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Cross-platform name input */}
+      <TextInputModal
+        visible={showCreate}
+        title="New Playlist"
+        placeholder="Playlist name"
+        onCancel={() => setShowCreate(false)}
+        onSubmit={(name) => void handleCreate(name)}
+      />
+    </>
+  );
+}
+
+// ── Local tracks tab ──────────────────────────────────────────────────────────
+function LocalTracksTab() {
+  const { colors, typography } = useTheme();
+  const queryClient = useQueryClient();
   const currentSong = usePlayerStore((s) => s.currentSong);
   const playSong = usePlayerStore((s) => s.playSong);
+  const [q, setQ] = useState("");
+  const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+  const [showSheet, setShowSheet] = useState(false);
+  const [isEnabling, setIsEnabling] = useState(false);
 
-  const { data: tracks, isLoading, error, refetch, isRefetching } = useQuery({
+  const {
+    data: tracks,
+    isLoading,
+    error,
+    refetch,
+    isRefetching,
+  } = useQuery({
     queryKey: [QUERY_KEYS.LOCAL_TRACKS],
     queryFn: async () => {
+      console.log("[LibraryScreen] queryFn running");
       const enabled = await getLocalMusicEnabled();
-      if (!enabled) return null; // null = not enabled
+      console.log("[LibraryScreen] localEnabled:", enabled);
+      if (!enabled) return null;
       return getLocalTracks();
     },
-    staleTime: 1000 * 60 * 5,
+    staleTime: 0, // Always re-fetch on focus
+    gcTime: 1000 * 60 * 5,
   });
 
-  const handleEnableAndRequest = useCallback(async () => {
-    const granted = await requestMusicPermission();
-    if (granted) {
-      const { setLocalMusicEnabled } = await import('@services/local/localMusicService');
-      await setLocalMusicEnabled(true);
-      await refetch();
-    } else {
-      Alert.alert('Permission denied', 'Please allow music library access in Settings to use this feature.');
-    }
-  }, [refetch]);
+  const filtered = useMemo(() => {
+    if (!tracks || !q.trim()) return tracks;
+    const lq = q.toLowerCase();
+    return tracks.filter(
+      (t) =>
+        t.title.toLowerCase().includes(lq) ||
+        t.artist.toLowerCase().includes(lq) ||
+        (t.album?.toLowerCase().includes(lq) ?? false),
+    );
+  }, [tracks, q]);
 
-  if (isLoading) {
+  // Enable local music — full flow with permission + SecureStore + cache invalidation
+  const handleEnable = useCallback(async () => {
+    setIsEnabling(true);
+    try {
+      console.log("[LibraryScreen] handleEnable: checking permission");
+      const currentStatus = await getMusicPermissionStatus();
+      console.log("[LibraryScreen] current permission:", currentStatus);
+
+      if (currentStatus === "denied") {
+        Alert.alert(
+          "Permission denied",
+          "Music library access was denied. Please enable it in your device Settings.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Open Settings",
+              onPress: () => void Linking.openSettings(),
+            },
+          ],
+        );
+        return;
+      }
+
+      if (currentStatus !== "granted") {
+        const granted = await requestMusicPermission();
+        if (!granted) {
+          Alert.alert(
+            "Permission denied",
+            "Dollop needs access to your music library to show local tracks.",
+          );
+          return;
+        }
+      }
+
+      // Permission is granted — save the enabled flag
+      console.log("[LibraryScreen] saving enabled flag");
+      await setLocalMusicEnabled(true);
+
+      // Force the query to re-run now. We do both invalidate AND refetch
+      // to avoid any race condition with the React Query scheduler.
+      console.log("[LibraryScreen] invalidating and refetching");
+      await queryClient.invalidateQueries({
+        queryKey: [QUERY_KEYS.LOCAL_TRACKS],
+      });
+      await refetch();
+    } catch (err) {
+      console.warn("[LibraryScreen] handleEnable error:", err);
+      Alert.alert("Error", "Failed to enable local music. Please try again.");
+    } finally {
+      setIsEnabling(false);
+    }
+  }, [queryClient, refetch]);
+
+  const getItemLayout = useCallback(
+    (_: unknown, i: number) => ({ length: ROW_H, offset: ROW_H * i, index: i }),
+    [],
+  );
+  const keyExtractor = useCallback((item: Song) => item.id, []);
+  const renderItem = useCallback(
+    ({ item, index }: { item: Song; index: number }) => (
+      <SongRow
+        song={item}
+        index={index}
+        isPlaying={currentSong?.id === item.id}
+        onPress={() => void playSong(item, filtered ?? [])}
+        onLongPress={() => {
+          setSelectedSong(item);
+          setShowSheet(true);
+        }}
+      />
+    ),
+    [currentSong?.id, filtered, playSong],
+  );
+
+  // ── Loading ───────────────────────────────────────────────────────────────
+  if (isLoading)
     return (
       <View style={styles.centred}>
         <ActivityIndicator color={colors.brand} size="large" />
-        <Text style={[typography.bodyMd, { color: colors.textSecondary, marginTop: Spacing[3] }]}>
-          Scanning your music library…
+        <Text
+          style={[
+            typography.bodyMd,
+            { color: colors.textSecondary, marginTop: Spacing[3] },
+          ]}
+        >
+          Scanning music library…
         </Text>
       </View>
     );
-  }
 
-  // null means local music is not enabled yet
-  if (tracks === null || tracks === undefined) {
+  // ── Not enabled ───────────────────────────────────────────────────────────
+  if (tracks === null || tracks === undefined)
     return (
       <View style={styles.centred}>
-        <View style={[styles.emptyIcon, { backgroundColor: colors.surfaceElevated }]}>
-          <FolderIcon color={colors.textTertiary} />
+        <View
+          style={[
+            styles.emptyIcon,
+            { backgroundColor: colors.surfaceElevated },
+          ]}
+        >
+          <MusicIcon c={colors.textTertiary} />
         </View>
-        <Text style={[typography.h3, { color: colors.textPrimary, marginTop: Spacing[4], marginBottom: Spacing[2] }]}>
+        <Text
+          style={[
+            typography.h3,
+            {
+              color: colors.textPrimary,
+              marginTop: Spacing[4],
+              marginBottom: Spacing[2],
+            },
+          ]}
+        >
           Local music is off
         </Text>
-        <Text style={[typography.bodyMd, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing[6] }]}>
-          Enable local music to listen to tracks stored on your device — no internet needed.
+        <Text
+          style={[
+            typography.bodyMd,
+            {
+              color: colors.textSecondary,
+              textAlign: "center",
+              marginBottom: Spacing[6],
+              paddingHorizontal: Spacing[4],
+            },
+          ]}
+        >
+          Enable to listen to tracks stored on this device — works offline, no
+          internet needed.
         </Text>
         <TouchableOpacity
-          style={[styles.enableBtn, { backgroundColor: colors.brand }]}
-          onPress={() => void handleEnableAndRequest()}
+          style={[
+            styles.enableBtn,
+            { backgroundColor: colors.brand },
+            isEnabling && { opacity: 0.6 },
+          ]}
+          onPress={() => void handleEnable()}
+          disabled={isEnabling}
           activeOpacity={0.8}
         >
-          <Text style={[typography.labelLg, { color: colors.textOnBrand, fontWeight: '700' }]}>
-            Enable Local Music
+          {isEnabling ? (
+            <ActivityIndicator color={colors.textOnBrand} />
+          ) : (
+            <Text
+              style={[
+                typography.labelLg,
+                { color: colors.textOnBrand, fontWeight: "700" },
+              ]}
+            >
+              Enable Local Music
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+
+  // ── Error ─────────────────────────────────────────────────────────────────
+  if (error)
+    return (
+      <View style={styles.centred}>
+        <Text
+          style={[
+            typography.bodyMd,
+            {
+              color: colors.error,
+              textAlign: "center",
+              marginBottom: Spacing[4],
+            },
+          ]}
+        >
+          {error instanceof Error
+            ? error.message
+            : "Failed to load local tracks."}
+        </Text>
+        <TouchableOpacity onPress={() => void refetch()}>
+          <Text style={[typography.labelLg, { color: colors.brand }]}>
+            Retry
           </Text>
         </TouchableOpacity>
       </View>
     );
-  }
 
-  if (error) {
-    return (
-      <View style={styles.centred}>
-        <Text style={[typography.bodyMd, { color: colors.error }]}>Failed to load local tracks.</Text>
-        <TouchableOpacity onPress={() => void refetch()} style={{ marginTop: Spacing[4] }}>
-          <Text style={[typography.labelLg, { color: colors.brand }]}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (tracks.length === 0) {
-    return (
-      <View style={styles.centred}>
-        <View style={[styles.emptyIcon, { backgroundColor: colors.surfaceElevated }]}>
-          <MusicIcon color={colors.textTertiary} />
-        </View>
-        <Text style={[typography.h3, { color: colors.textPrimary, marginTop: Spacing[4], marginBottom: Spacing[2] }]}>
-          No music found
-        </Text>
-        <Text style={[typography.bodyMd, { color: colors.textSecondary, textAlign: 'center' }]}>
-          No audio files were found on your device. Add music files and pull to refresh.
-        </Text>
-      </View>
-    );
-  }
-
+  // ── Track list ────────────────────────────────────────────────────────────
   return (
-    <FlatList
-      data={tracks}
-      keyExtractor={(item) => item.id}
-      renderItem={({ item, index }) => (
-        <SongRow
-          song={item}
-          index={index}
-          isPlaying={currentSong?.id === item.id}
-          onPress={() => void playSong(item, tracks)}
+    <>
+      <View
+        style={[
+          styles.searchBar,
+          {
+            backgroundColor: colors.surfaceElevated,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <SearchIcon c={colors.textTertiary} />
+        <TextInput
+          style={[
+            typography.bodyMd,
+            { color: colors.textPrimary, flex: 1, paddingVertical: 0 },
+          ]}
+          placeholder="Search songs, artists, albums…"
+          placeholderTextColor={colors.textTertiary}
+          value={q}
+          onChangeText={setQ}
+          clearButtonMode="while-editing"
         />
-      )}
-      refreshControl={
-        <RefreshControl refreshing={isRefetching} onRefresh={() => void refetch()} tintColor={colors.brand} />
-      }
-      ListHeaderComponent={
-        <Text style={[typography.labelSm, { color: colors.textTertiary, marginBottom: Spacing[4] }]}>
-          {tracks.length} {tracks.length === 1 ? 'song' : 'songs'} on this device
-        </Text>
-      }
-      contentContainerStyle={styles.listContent}
-      ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.border }]} />}
-    />
+      </View>
+
+      <Text
+        style={[
+          typography.labelSm,
+          {
+            color: colors.textTertiary,
+            paddingHorizontal: Layout.screenPaddingH,
+            marginBottom: Spacing[2],
+          },
+        ]}
+      >
+        {filtered?.length ?? 0}{" "}
+        {(filtered?.length ?? 0) === 1 ? "song" : "songs"}
+        {q ? ` matching "${q}"` : " on this device"}
+      </Text>
+
+      <FlatList
+        data={filtered ?? []}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        getItemLayout={getItemLayout}
+        removeClippedSubviews
+        maxToRenderPerBatch={12}
+        updateCellsBatchingPeriod={50}
+        windowSize={10}
+        initialNumToRender={15}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={() => void refetch()}
+            tintColor={colors.brand}
+          />
+        }
+        contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={() => (
+          <View style={[styles.sep, { backgroundColor: colors.border }]} />
+        )}
+        ListEmptyComponent={
+          q ? (
+            <View style={styles.centred}>
+              <Text
+                style={[typography.bodyMd, { color: colors.textSecondary }]}
+              >
+                No results for "{q}"
+              </Text>
+            </View>
+          ) : null
+        }
+      />
+
+      <AddToPlaylistSheet
+        visible={showSheet}
+        song={selectedSong}
+        onClose={() => setShowSheet(false)}
+      />
+    </>
   );
 }
 
-// ── Playlists tab (Phase 2 stub) ───────────────────────────────────────────────
-function PlaylistsTab(): React.JSX.Element {
+// ── Playlist detail ───────────────────────────────────────────────────────────
+function PlaylistDetail({
+  playlist,
+  onBack,
+}: {
+  playlist: LocalPlaylist;
+  onBack: () => void;
+}) {
+  const { colors, typography } = useTheme();
+  const currentSong = usePlayerStore((s) => s.currentSong);
+  const playSong = usePlayerStore((s) => s.playSong);
+  const playQueue = usePlayerStore((s) => s.playQueue);
+  const { removeSong, playlists } = useLocalPlaylistStore();
+  const [q, setQ] = useState("");
+
+  const live = playlists.find((p) => p.id === playlist.id) ?? playlist;
+  const filtered = useMemo(() => {
+    if (!q.trim()) return live.songs;
+    const lq = q.toLowerCase();
+    return live.songs.filter(
+      (s) =>
+        s.title.toLowerCase().includes(lq) ||
+        s.artist.toLowerCase().includes(lq),
+    );
+  }, [live.songs, q]);
+
+  const getItemLayout = useCallback(
+    (_: unknown, i: number) => ({ length: ROW_H, offset: ROW_H * i, index: i }),
+    [],
+  );
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={[styles.detailHeader, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity
+          onPress={onBack}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Text style={[typography.labelLg, { color: colors.brand }]}>
+            ← Back
+          </Text>
+        </TouchableOpacity>
+        <Text
+          style={[
+            typography.h3,
+            { color: colors.textPrimary, flex: 1, textAlign: "center" },
+          ]}
+          numberOfLines={1}
+        >
+          {live.name}
+        </Text>
+        <TouchableOpacity
+          onPress={() => live.songs.length > 0 && void playQueue(live.songs, 0)}
+          disabled={live.songs.length === 0}
+        >
+          <Text
+            style={[
+              typography.labelLg,
+              {
+                color:
+                  live.songs.length > 0 ? colors.brand : colors.textTertiary,
+              },
+            ]}
+          >
+            Play all
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View
+        style={[
+          styles.searchBar,
+          {
+            backgroundColor: colors.surfaceElevated,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <SearchIcon c={colors.textTertiary} />
+        <TextInput
+          style={[
+            typography.bodyMd,
+            { color: colors.textPrimary, flex: 1, paddingVertical: 0 },
+          ]}
+          placeholder="Search in playlist…"
+          placeholderTextColor={colors.textTertiary}
+          value={q}
+          onChangeText={setQ}
+        />
+      </View>
+
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        getItemLayout={getItemLayout}
+        removeClippedSubviews
+        maxToRenderPerBatch={12}
+        windowSize={10}
+        renderItem={({ item, index }) => (
+          <SongRow
+            song={item}
+            index={index}
+            isPlaying={currentSong?.id === item.id}
+            onPress={() => void playSong(item, filtered)}
+            onLongPress={() =>
+              Alert.alert(
+                "Remove song",
+                `Remove "${item.title}" from "${live.name}"?`,
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Remove",
+                    style: "destructive",
+                    onPress: () => void removeSong(live.id, item.id),
+                  },
+                ],
+              )
+            }
+          />
+        )}
+        contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={() => (
+          <View style={[styles.sep, { backgroundColor: colors.border }]} />
+        )}
+        ListEmptyComponent={
+          <View style={styles.centred}>
+            <Text
+              style={[
+                typography.bodyMd,
+                { color: colors.textSecondary, textAlign: "center" },
+              ]}
+            >
+              {q
+                ? `No results for "${q}"`
+                : 'No songs yet.\nLong-press a song in "On this device" to add it here.'}
+            </Text>
+          </View>
+        }
+      />
+    </View>
+  );
+}
+
+// ── Playlists tab ─────────────────────────────────────────────────────────────
+function PlaylistsTab() {
+  const { colors, typography } = useTheme();
+  const { playlists, createPlaylist, deletePlaylist, isLoaded, load } =
+    useLocalPlaylistStore();
+  const [showCreate, setShowCreate] = useState(false);
+  const [selected, setSelected] = useState<LocalPlaylist | null>(null);
+
+  useEffect(() => {
+    if (!isLoaded) void load();
+  }, [isLoaded, load]);
+
+  if (selected) {
+    return (
+      <PlaylistDetail playlist={selected} onBack={() => setSelected(null)} />
+    );
+  }
+
+  return (
+    <View style={{ flex: 1 }}>
+      <FlatList
+        data={playlists}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={[styles.listContent, { paddingBottom: 120 }]}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.plRow}
+            onPress={() => setSelected(item)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.plThumb, { backgroundColor: artBg(item.id) }]}>
+              <MusicIcon c="rgba(255,255,255,0.5)" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={[typography.labelLg, { color: colors.textPrimary }]}
+                numberOfLines={1}
+              >
+                {item.name}
+              </Text>
+              <Text
+                style={[typography.labelSm, { color: colors.textSecondary }]}
+              >
+                {item.songs.length} songs
+              </Text>
+            </View>
+            <ChevronRight c={colors.textTertiary} />
+            <TouchableOpacity
+              onPress={() =>
+                Alert.alert("Delete playlist", `Delete "${item.name}"?`, [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: () => void deletePlaylist(item.id),
+                  },
+                ])
+              }
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={{ paddingLeft: Spacing[2] }}
+            >
+              <TrashIcon c={colors.textTertiary} />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        )}
+        ItemSeparatorComponent={() => (
+          <View style={[styles.sep, { backgroundColor: colors.border }]} />
+        )}
+        ListEmptyComponent={
+          <View style={styles.centred}>
+            <View
+              style={[
+                styles.emptyIcon,
+                { backgroundColor: colors.surfaceElevated },
+              ]}
+            >
+              <MusicIcon c={colors.textTertiary} />
+            </View>
+            <Text
+              style={[
+                typography.h3,
+                {
+                  color: colors.textPrimary,
+                  marginTop: Spacing[4],
+                  marginBottom: Spacing[2],
+                },
+              ]}
+            >
+              No playlists yet
+            </Text>
+            <Text
+              style={[
+                typography.bodyMd,
+                { color: colors.textSecondary, textAlign: "center" },
+              ]}
+            >
+              Tap the + button to create your first playlist.
+            </Text>
+          </View>
+        }
+      />
+
+      {/* FAB bottom-right */}
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: colors.brand }]}
+        onPress={() => setShowCreate(true)}
+        activeOpacity={0.85}
+      >
+        <PlusIcon c={colors.textOnBrand} />
+      </TouchableOpacity>
+
+      <TextInputModal
+        visible={showCreate}
+        title="New Playlist"
+        placeholder="Playlist name"
+        onCancel={() => setShowCreate(false)}
+        onSubmit={(name) => void createPlaylist(name)}
+      />
+    </View>
+  );
+}
+
+// ── Tab bar ───────────────────────────────────────────────────────────────────
+type LibTab = "local" | "playlists";
+
+function TabBar({
+  active,
+  onSelect,
+}: {
+  active: LibTab;
+  onSelect: (t: LibTab) => void;
+}) {
   const { colors, typography } = useTheme();
   return (
-    <View style={styles.centred}>
-      <Text style={[typography.bodyMd, { color: colors.textSecondary }]}>
-        Your playlists will appear here.
-      </Text>
+    <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
+      {(["local", "playlists"] as LibTab[]).map((tab) => (
+        <TouchableOpacity
+          key={tab}
+          style={[
+            styles.tab,
+            active === tab && {
+              borderBottomColor: colors.brand,
+              borderBottomWidth: 2,
+            },
+          ]}
+          onPress={() => onSelect(tab)}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[
+              typography.labelMd,
+              {
+                color: active === tab ? colors.brand : colors.textTertiary,
+                fontWeight: active === tab ? "600" : "400",
+              },
+            ]}
+          >
+            {tab === "local" ? "On this device" : "Playlists"}
+          </Text>
+        </TouchableOpacity>
+      ))}
     </View>
   );
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
-type LibTab = 'local' | 'playlists';
-
 export function LibraryScreen(_props: LibraryScreenProps): React.JSX.Element {
   const { colors, typography } = useTheme();
-  const [activeTab, setActiveTab] = useState<LibTab>('local');
+  const [activeTab, setActiveTab] = useState<LibTab>("local");
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
+    <SafeAreaView
+      style={[styles.safe, { backgroundColor: colors.background }]}
+      edges={["top"]}
+    >
       <View style={styles.header}>
-        <Text style={[typography.h1, { color: colors.textPrimary }]}>Library</Text>
+        <Text style={[typography.h1, { color: colors.textPrimary }]}>
+          Library
+        </Text>
       </View>
-
-      {/* Tab bar */}
-      <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
-        <Tab label="On this device" active={activeTab === 'local'} onPress={() => setActiveTab('local')} />
-        <Tab label="Playlists" active={activeTab === 'playlists'} onPress={() => setActiveTab('playlists')} />
-      </View>
-
-      <View style={styles.content}>
-        {activeTab === 'local' ? <LocalMusicTab /> : <PlaylistsTab />}
+      <TabBar active={activeTab} onSelect={setActiveTab} />
+      <View style={{ flex: 1 }}>
+        {activeTab === "local" ? <LocalTracksTab /> : <PlaylistsTab />}
       </View>
     </SafeAreaView>
   );
@@ -259,17 +1112,167 @@ export function LibraryScreen(_props: LibraryScreenProps): React.JSX.Element {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  header: { paddingHorizontal: Layout.screenPaddingH, paddingTop: Spacing[6], paddingBottom: Spacing[2] },
-  tabBar: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: Layout.screenPaddingH },
-  tab: { paddingVertical: Spacing[3], marginRight: Spacing[6], borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  content: { flex: 1 },
-  listContent: { paddingHorizontal: Layout.screenPaddingH, paddingTop: Spacing[4], paddingBottom: Layout.miniPlayerHeight + Layout.tabBarHeight + Spacing[4] },
-  centred: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Layout.screenPaddingH, gap: 0 },
-  emptyIcon: { width: 72, height: 72, borderRadius: BorderRadius.full, alignItems: 'center', justifyContent: 'center' },
-  enableBtn: { borderRadius: BorderRadius.lg, paddingHorizontal: Spacing[8], height: Layout.touchTarget + 8, alignItems: 'center', justifyContent: 'center' },
-  songRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: Spacing[2.5], gap: Spacing[3] },
-  songIndex: { width: 32, height: 32, borderRadius: BorderRadius.md, alignItems: 'center', justifyContent: 'center' },
-  songArtwork: { width: Layout.artworkSm, height: Layout.artworkSm, borderRadius: BorderRadius.md, alignItems: 'center', justifyContent: 'center' },
+  header: {
+    paddingHorizontal: Layout.screenPaddingH,
+    paddingTop: Spacing[6],
+    paddingBottom: Spacing[2],
+  },
+  tabBar: {
+    flexDirection: "row",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Layout.screenPaddingH,
+  },
+  tab: {
+    paddingVertical: Spacing[3],
+    marginRight: Spacing[6],
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing[2],
+    marginHorizontal: Layout.screenPaddingH,
+    marginVertical: Spacing[3],
+    paddingHorizontal: Spacing[3],
+    paddingVertical: Spacing[2.5],
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  listContent: {
+    paddingHorizontal: Layout.screenPaddingH,
+    paddingBottom: Layout.miniPlayerHeight + Layout.tabBarHeight + Spacing[4],
+    flexGrow: 1,
+  },
+  centred: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: Layout.screenPaddingH,
+    paddingTop: Spacing[16],
+  },
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: BorderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  enableBtn: {
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing[8],
+    height: Layout.touchTarget + 8,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 200,
+  },
+  songRow: { flexDirection: "row", alignItems: "center", gap: Spacing[3] },
+  indexWrap: { width: 28, alignItems: "center" },
+  artWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  artImg: { width: 48, height: 48 },
   songMeta: { flex: 1 },
-  separator: { height: StyleSheet.hairlineWidth, marginLeft: 32 + Spacing[3] + Layout.artworkSm + Spacing[3] },
+  sep: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 28 + Spacing[3] + 48 + Spacing[3],
+  },
+  plRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing[3],
+    paddingVertical: Spacing[3],
+  },
+  plThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Layout.screenPaddingH,
+    paddingVertical: Spacing[4],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: Spacing[2],
+  },
+  fab: {
+    position: "absolute",
+    bottom: Layout.miniPlayerHeight + Layout.tabBarHeight + Spacing[4],
+    right: Layout.screenPaddingH,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  // Modals
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing[6],
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: BorderRadius["2xl"],
+    borderWidth: 1,
+    padding: Spacing[6],
+  },
+  modalInput: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    paddingHorizontal: Spacing[4],
+    paddingVertical: Platform.OS === "android" ? Spacing[3] : Spacing[3],
+    marginBottom: Spacing[5],
+    minHeight: 52,
+  },
+  modalBtns: { flexDirection: "row", gap: Spacing[3] },
+  modalBtn: {
+    flex: 1,
+    height: Layout.touchTarget + 4,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    borderTopLeftRadius: BorderRadius["2xl"],
+    borderTopRightRadius: BorderRadius["2xl"],
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: Spacing[6],
+    paddingBottom: Spacing[12],
+  },
+  sheetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing[3],
+    paddingVertical: Spacing[3],
+  },
+  sheetIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

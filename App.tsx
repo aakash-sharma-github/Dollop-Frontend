@@ -10,6 +10,7 @@ import { ThemeProvider, useTheme } from '@theme/index';
 import { RootNavigator } from '@navigation/RootNavigator';
 import { useAuthStore } from '@store/authStore';
 import { useThemeStore } from '@store/themeStore';
+import { useLocalPlaylistStore } from '@store/localPlaylistStore';
 import { setupAudioPlayer } from '@store/playerStore';
 import { OfflineBanner } from '@components/common/OfflineBanner';
 
@@ -31,20 +32,23 @@ function AppContent(): React.JSX.Element {
   const hydrateAuth = useAuthStore((s) => s.hydrateFromStorage);
   const isLoading = useAuthStore((s) => s.isLoading);
   const loadTheme = useThemeStore((s) => s.loadPreference);
+  const loadLocalPlaylists = useLocalPlaylistStore((s) => s.load);
 
   const init = useCallback(async () => {
     try {
+      // Run all init tasks in parallel — fastest possible startup
       await Promise.all([
         setupAudioPlayer(),
         loadTheme(),
-        hydrateAuth(),
+        loadLocalPlaylists(),
+        hydrateAuth(),  // restored from cache immediately inside this fn
       ]);
     } catch (err) {
       console.warn('[App] init error:', err);
     } finally {
       await SplashScreen.hideAsync();
     }
-  }, [hydrateAuth, loadTheme]);
+  }, [hydrateAuth, loadTheme, loadLocalPlaylists]);
 
   useEffect(() => { void init(); }, [init]);
 
