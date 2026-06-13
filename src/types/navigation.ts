@@ -23,6 +23,7 @@ export type RootStackParamList = {
   [ROUTES.MAIN_TABS]: undefined;
   [ROUTES.PLAYER]: undefined;
   [ROUTES.SETTINGS]: undefined;
+  [ROUTES.SPOTIFY_IMPORT]: undefined;
   [ROUTES.PRIVACY_POLICY]: undefined;
   [ROUTES.TERMS_CONDITIONS]: undefined;
 };

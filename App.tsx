@@ -12,7 +12,9 @@ import { useAuthStore } from '@store/authStore';
 import { useThemeStore } from '@store/themeStore';
 import { useLocalPlaylistStore } from '@store/localPlaylistStore';
 import { setupAudioPlayer } from '@store/playerStore';
-import { OfflineBanner } from '@components/common/OfflineBanner';
+import { useToast } from '@components/common/Toast';
+import { useNetworkStatus } from '@hooks/useNetworkStatus';
+import { logger } from '@utils/logger';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -33,6 +35,7 @@ function AppContent(): React.JSX.Element {
   const isLoading = useAuthStore((s) => s.isLoading);
   const loadTheme = useThemeStore((s) => s.loadPreference);
   const loadLocalPlaylists = useLocalPlaylistStore((s) => s.load);
+  const { show, toast } = useToast();
 
   const init = useCallback(async () => {
     try {
@@ -44,13 +47,24 @@ function AppContent(): React.JSX.Element {
         hydrateAuth(),  // restored from cache immediately inside this fn
       ]);
     } catch (err) {
-      console.warn('[App] init error:', err);
+      logger.error('App', 'init error', err);
     } finally {
       await SplashScreen.hideAsync();
     }
   }, [hydrateAuth, loadTheme, loadLocalPlaylists]);
 
   useEffect(() => { void init(); }, [init]);
+
+  // Connectivity transitions → brief toast, no persistent banner
+  const handleConnectivityChange = useCallback((isConnected: boolean) => {
+    if (isConnected) {
+      show('Back online', 'success');
+    } else {
+      show("You're offline", 'warning');
+    }
+  }, [show]);
+
+  useNetworkStatus(handleConnectivityChange);
 
   if (isLoading) {
     return (
@@ -63,7 +77,7 @@ function AppContent(): React.JSX.Element {
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <OfflineBanner />
+      {toast}
       <NavigationContainer>
         <RootNavigator />
       </NavigationContainer>

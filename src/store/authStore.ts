@@ -1,10 +1,11 @@
-import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
-import type { User, AuthResult } from '@app-types/index';
-import { tokenStorage } from '@services/auth/tokenStorage';
-import { authApi } from '@services/api';
+import { create } from "zustand";
+import * as SecureStore from "expo-secure-store";
+import type { User, AuthResult } from "@app-types/index";
+import { tokenStorage } from "@services/auth/tokenStorage";
+import { authApi } from "@services/api";
+import { logger } from "@utils/logger";
 
-const USER_CACHE_KEY = 'dollop_user_cache';
+const USER_CACHE_KEY = "dollop_user_cache";
 
 // ── Snake_case → camelCase transform ─────────────────────────────────────────
 type ApiUserRow = {
@@ -14,7 +15,7 @@ type ApiUserRow = {
   displayName?: string | null;
   avatar_url?: string | null;
   avatarUrl?: string | null;
-  provider: 'google' | 'magic_link';
+  provider: "google" | "magic_link";
   created_at?: string;
   createdAt?: string;
   updated_at?: string;
@@ -37,7 +38,9 @@ function mapApiUserToUser(raw: ApiUserRow): User {
 async function saveUserCache(user: User): Promise<void> {
   try {
     await SecureStore.setItemAsync(USER_CACHE_KEY, JSON.stringify(user));
-  } catch { /* non-fatal */ }
+  } catch {
+    /* non-fatal */
+  }
 }
 
 async function loadUserCache(): Promise<User | null> {
@@ -45,11 +48,17 @@ async function loadUserCache(): Promise<User | null> {
     const raw = await SecureStore.getItemAsync(USER_CACHE_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as User;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 async function clearUserCache(): Promise<void> {
-  try { await SecureStore.deleteItemAsync(USER_CACHE_KEY); } catch { /* non-fatal */ }
+  try {
+    await SecureStore.deleteItemAsync(USER_CACHE_KEY);
+  } catch {
+    /* non-fatal */
+  }
 }
 
 // ── Session refresh helper ────────────────────────────────────────────────────
@@ -109,8 +118,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
    */
   hydrateFromStorage: async () => {
     set({ isLoading: true });
+    logger.debug("Auth", "hydrateFromStorage: start");
     try {
       const hasTokens = await tokenStorage.hasTokens();
+      logger.debug("Auth", "hydrateFromStorage: hasTokens", { hasTokens });
       if (!hasTokens) {
         await clearUserCache();
         set({ isLoading: false, isAuthenticated: false, user: null });
@@ -120,6 +131,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Step 1: Restore from cache immediately so UI shows instantly
       const cachedUser = await loadUserCache();
       if (cachedUser) {
+        logger.debug("Auth", "hydrateFromStorage: restored from cache", {
+          email: cachedUser.email,
+        });
         set({ user: cachedUser, isAuthenticated: true, isOffline: false });
         set({ isLoading: false }); // Hide splash immediately
       }
@@ -129,43 +143,73 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const { user: rawUser } = await authApi.getMe();
         const freshUser = mapApiUserToUser(rawUser as unknown as ApiUserRow);
         await saveUserCache(freshUser);
+        logger.info("Auth", "hydrateFromStorage: getMe success", {
+          email: freshUser.email,
+        });
         set({ user: freshUser, isAuthenticated: true, isOffline: false });
       } catch (err) {
-        const isAuthFailure = err instanceof Error && (
-          err.message.includes('401') ||
-          err.message.includes('403') ||
-          err.message.includes('INVALID_TOKEN') ||
-          err.message.includes('TOKEN_EXPIRED') ||
-          err.message.includes('USER_NOT_FOUND')
-        );
-        const isNetworkError = err instanceof Error && (
-          err.message.includes('Network request failed') ||
-          err.message.includes('Failed to fetch') ||
-          err.message.includes('timeout') ||
-          err.message.includes('network')
-        );
+        const isAuthFailure =
+          err instanceof Error &&
+          (err.message.includes("401") ||
+            err.message.includes("403") ||
+            err.message.includes("INVALID_TOKEN") ||
+            err.message.includes("TOKEN_EXPIRED") ||
+            err.message.includes("USER_NOT_FOUND"));
+        const isNetworkError =
+          err instanceof Error &&
+          (err.message.includes("Network request failed") ||
+            err.message.includes("Failed to fetch") ||
+            err.message.includes("timeout") ||
+            err.message.includes("network"));
+
+        logger.warn("Auth", "hydrateFromStorage: getMe failed", {
+          message: err instanceof Error ? err.message : String(err),
+          isAuthFailure,
+          isNetworkError,
+        });
 
         if (isAuthFailure) {
           // Token is expired or invalid — try to refresh before logging out
           const refreshedUser = await tryRefreshSession();
           if (refreshedUser) {
-            set({ user: refreshedUser, isAuthenticated: true, isOffline: false });
+            logger.info("Auth", "hydrateFromStorage: token refresh succeeded", {
+              email: refreshedUser.email,
+            });
+            set({
+              user: refreshedUser,
+              isAuthenticated: true,
+              isOffline: false,
+            });
           } else if (!cachedUser) {
             // Refresh also failed and no cache → must log out
+            logger.warn(
+              "Auth",
+              "hydrateFromStorage: refresh failed, no cache — logging out",
+            );
             await tokenStorage.clearTokens();
             await clearUserCache();
             set({ user: null, isAuthenticated: false });
+          } else {
+            logger.info(
+              "Auth",
+              "hydrateFromStorage: refresh failed, staying logged in with cache",
+            );
           }
           // If we have cached user but refresh failed → stay logged in with cache
           // This covers the case where the backend itself is down
         } else if (isNetworkError) {
           // No connectivity — stay logged in with cached data
+          logger.info(
+            "Auth",
+            "hydrateFromStorage: network error, staying logged in offline",
+          );
           set({ isOffline: true });
         }
         // Any other error → keep user logged in with cache, don't logout
       }
-    } catch {
+    } catch (err) {
       // SecureStore read failure — can't do anything useful, show login
+      logger.error("Auth", "hydrateFromStorage: SecureStore read failed", err);
       set({ user: null, isAuthenticated: false });
     } finally {
       set({ isLoading: false });
@@ -173,13 +217,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signInWithResult: async (result: AuthResult) => {
-    await tokenStorage.saveTokens(result.tokens.accessToken, result.tokens.refreshToken);
+    await tokenStorage.saveTokens(
+      result.tokens.accessToken,
+      result.tokens.refreshToken,
+    );
     const user = mapApiUserToUser(result.user as unknown as ApiUserRow);
     await saveUserCache(user);
+    logger.info("Auth", "signInWithResult", {
+      email: user.email,
+      provider: user.provider,
+    });
     set({ user, isAuthenticated: true, isOffline: false });
   },
 
   signOut: async () => {
+    logger.info("Auth", "signOut");
     await tokenStorage.clearTokens();
     await clearUserCache();
     set({ user: null, isAuthenticated: false, isOffline: false });

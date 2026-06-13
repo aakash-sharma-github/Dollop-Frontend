@@ -16,6 +16,7 @@
 
 import type { Song } from '@app-types/index';
 import type { MusicApiProvider, SearchResult, Artist, Album } from './provider.interface';
+import { logger } from '@utils/logger';
 
 const BASE = 'https://api.jamendo.com/v3.0';
 
@@ -72,23 +73,29 @@ async function jFetch<T>(
         url.searchParams.set(k, String(v));
     }
 
+    logger.debug('Jamendo', `request: ${endpoint}`, params);
+
     let res: Response;
     try {
         res = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
     } catch (err) {
+        logger.error('Jamendo', `network error on ${endpoint}`, err);
         throw new Error(`Jamendo network error: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     if (!res.ok) {
+        logger.error('Jamendo', `API error on ${endpoint}`, { status: res.status });
         throw new Error(`Jamendo API ${res.status}: ${res.statusText}`);
     }
 
     const data = (await res.json()) as JamendoResponse<T>;
 
     if (data.headers.status !== 'success') {
+        logger.error('Jamendo', `response error on ${endpoint}`, data.headers.error_message);
         throw new Error(`Jamendo error: ${data.headers.error_message}`);
     }
 
+    logger.debug('Jamendo', `response: ${endpoint}`, { count: data.results.length });
     return data.results;
 }
 

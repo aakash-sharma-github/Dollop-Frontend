@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { audioPlayer } from '@services/audio/audioPlayer';
-import type { Song, PlayerState, RepeatMode } from '@app-types/index';
+import { logger } from '@utils/logger';
+import type { Song, PlayerState, RepeatMode } from '@types/index';
 
 // ── Progress store — updates every 500ms, isolated to prevent FPS drops ────────
 interface ProgressState {
@@ -87,13 +88,17 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     addToQueue: (song: Song) => {
       const { queue } = get();
       if (!queue.some((s) => s.id === song.id)) {
+        logger.debug('Queue', 'addToQueue', { title: song.title, newLength: queue.length + 1 });
         set({ queue: [...queue, song], isVisible: true });
+      } else {
+        logger.debug('Queue', 'addToQueue: already in queue, skipped', { title: song.title });
       }
     },
 
     removeFromQueue: (index: number) => {
       const { queue, queueIndex } = get();
       if (index < 0 || index >= queue.length) return;
+      logger.debug('Queue', 'removeFromQueue', { index, title: queue[index]?.title });
       const newQueue = queue.filter((_, i) => i !== index);
       const newIndex = index < queueIndex ? queueIndex - 1 : queueIndex;
       set({ queue: newQueue, queueIndex: Math.min(newIndex, newQueue.length - 1) });
@@ -101,6 +106,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
 
     reorderQueue: (fromIndex: number, toIndex: number) => {
       const { queue, queueIndex } = get();
+      logger.debug('Queue', 'reorderQueue', { fromIndex, toIndex, title: queue[fromIndex]?.title });
       const newQueue = [...queue];
       const [moved] = newQueue.splice(fromIndex, 1);
       if (moved) newQueue.splice(toIndex, 0, moved);
@@ -118,6 +124,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     },
 
     clearQueue: async () => {
+      logger.info('Queue', 'clearQueue');
       await audioPlayer.unload();
       set({ queue: [], queueIndex: 0, currentSong: null, isPlaying: false, isVisible: false });
       usePlayerProgressStore.setState({ positionMs: 0, durationMs: 0 });
@@ -134,6 +141,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       set({ isLoading: true, isVisible: true });
       const song = songs[startIndex];
       if (!song) { set({ isLoading: false }); return; }
+      logger.info('Player', 'playQueue', { title: song.title, provider: song.provider, startIndex, queueLength: songs.length });
       set({ queue: songs, queueIndex: startIndex, currentSong: song });
       usePlayerProgressStore.setState({ positionMs: 0, durationMs: song.durationMs });
       await audioPlayer.loadAndPlay(song);

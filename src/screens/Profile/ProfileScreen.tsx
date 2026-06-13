@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   Image,
   Switch,
 } from "react-native";
@@ -14,6 +13,8 @@ import { useTheme } from "@theme/index";
 import { Layout, Spacing, BorderRadius } from "@theme/spacing";
 import { useAuthStore } from "@store/authStore";
 import { useThemeStore } from "@store/themeStore";
+import { useConfirmDialog } from "@components/common/ConfirmDialog";
+import { SPOTIFY_IMPORT_ALLOWED_EMAIL } from "@screens/SpotifyImport/SpotifyImportScreen";
 import { APP_VERSION } from "@utils/version";
 import { ROUTES } from "@constants/index";
 import type { ProfileScreenProps } from "@app-types/navigation";
@@ -195,6 +196,7 @@ export function ProfileScreen({
   const isOffline = useAuthStore((s) => s.isOffline);
   const signOut = useAuthStore((s) => s.signOut);
   const { preference, setPreference } = useThemeStore();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
   const displayName = getUserDisplayName(
     user?.displayName ?? null,
@@ -220,16 +222,6 @@ export function ProfileScreen({
           <Text style={[typography.h1, { color: colors.textPrimary }]}>
             Profile
           </Text>
-          {/* <TouchableOpacity
-            onPress={() => navigation.navigate(ROUTES.SETTINGS)}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            style={[
-              styles.settingsBtn,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <SettingsIcon color={colors.textSecondary} />
-          </TouchableOpacity> */}
         </View>
 
         {/* Offline chip */}
@@ -337,6 +329,12 @@ export function ProfileScreen({
             label="Settings"
             onPress={() => navigation.navigate(ROUTES.SETTINGS)}
           />
+          {user?.email === SPOTIFY_IMPORT_ALLOWED_EMAIL && (
+            <Row
+              label="Import from Spotify"
+              onPress={() => navigation.navigate(ROUTES.SPOTIFY_IMPORT)}
+            />
+          )}
         </Section>
 
         <View style={styles.spacer} />
@@ -356,16 +354,17 @@ export function ProfileScreen({
 
         <TouchableOpacity
           style={[styles.signOutBtn, { borderColor: colors.error }]}
-          onPress={() =>
-            Alert.alert("Sign out", "Are you sure?", [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Sign out",
-                style: "destructive",
-                onPress: () => void signOut(),
-              },
-            ])
-          }
+          onPress={() => {
+            void (async () => {
+              const ok = await confirm({
+                title: "Sign out",
+                message: "Are you sure you want to sign out?",
+                confirmLabel: "Sign out",
+                destructive: true,
+              });
+              if (ok) await signOut();
+            })();
+          }}
           activeOpacity={0.8}
         >
           <Text
@@ -377,6 +376,8 @@ export function ProfileScreen({
             Sign out
           </Text>
         </TouchableOpacity>
+
+        {confirmDialog}
       </View>
     </SafeAreaView>
   );

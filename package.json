@@ -1,6 +1,6 @@
 {
   "name": "dollop",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "main": "expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
@@ -12,9 +12,9 @@
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
     "prebuild": "bunx expo prebuild && cd android && ./gradlew assemblerelease",
-    "prebuild:debug": "bunx expo prebuild --platform android --clean && cd android && ./gradlew assembleDebug",
+    "prebuild:dev": "bunx expo prebuild --platform android --clean && cd android && ./gradlew assembleDebug",
     "adb:install": "cd android && adb install app/build/outputs/apk/release/app-release.apk",
-    "adb:debug": "cd android && adb install -r app/build/outputs/apk/debug/app-debug.apk"
+    "adb:dev": "cd android && adb install -r app/build/outputs/apk/debug/app-debug.apk"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.2",
@@ -47,7 +47,9 @@
     "expo-media-library": "~16.0.4",
     "expo-file-system": "~17.0.1",
     "react-native-draggable-flatlist": "^4.0.1",
-    "expo-image": "~1.12.15"
+    "expo-image": "~1.12.15",
+    "expo-clipboard": "~6.0.3",
+    "@react-native-community/netinfo": "11.3.1"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",

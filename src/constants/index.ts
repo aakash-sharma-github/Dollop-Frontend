@@ -11,6 +11,7 @@ export const ROUTES = {
   PROFILE: 'Profile',
   PLAYER: 'Player',
   SETTINGS: 'Settings',
+  SPOTIFY_IMPORT: 'SpotifyImport',
   PRIVACY_POLICY: 'PrivacyPolicy',
   TERMS_CONDITIONS: 'TermsConditions',
 } as const;

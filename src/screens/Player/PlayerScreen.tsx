@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Modal,
   FlatList,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -19,12 +20,19 @@ import Animated2, {
   runOnJS,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import DraggableFlatList from "react-native-draggable-flatlist";
 import Svg, { Path, Rect, Circle } from "react-native-svg";
 import { useNavigation } from "@react-navigation/native";
 import { Image } from "expo-image";
+import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "@theme/index";
 import { Spacing, Layout, BorderRadius } from "@theme/spacing";
 import { usePlayerStore, usePlayerProgressStore } from "@store/playerStore";
+import {
+  getLyrics,
+  getActiveLyricIndex,
+  type SyncedLyricLine,
+} from "@services/api/lyrics";
 import type { Song } from "@app-types/index";
 import type { PlayerScreenProps } from "@app-types/navigation";
 
@@ -496,69 +504,83 @@ const menuSt = StyleSheet.create({
 // ── Queue item ─────────────────────────────────────────────────────────────────
 interface QueueItemProps {
   song: Song;
-  index: number;
   isActive: boolean;
   onPress: () => void;
   onRemove: () => void;
+  /** Called when the drag handle receives a long-press — starts the drag */
+  onDragStart: () => void;
+  isDragging?: boolean;
 }
 
 function QueueItem({
   song,
-  index,
   isActive,
   onPress,
   onRemove,
+  onDragStart,
+  isDragging,
 }: QueueItemProps) {
   const { colors, typography } = useTheme();
   return (
-    <TouchableOpacity
+    <View
       style={[
         qSt.row,
-        { backgroundColor: isActive ? colors.brand + "14" : "transparent" },
+        {
+          backgroundColor: isDragging
+            ? colors.surfaceElevated
+            : isActive
+              ? colors.brand + "14"
+              : "transparent",
+        },
       ]}
-      onPress={onPress}
-      activeOpacity={0.7}
     >
-      <View style={[qSt.art, { backgroundColor: artworkBg(song.id) }]}>
-        {song.artworkUrl && (
-          <Image
-            source={{ uri: song.artworkUrl }}
-            style={StyleSheet.absoluteFillObject}
-            contentFit="cover"
-          />
-        )}
-        {isActive && (
-          <View
+      <TouchableOpacity
+        style={qSt.pressArea}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        <View style={[qSt.art, { backgroundColor: artworkBg(song.id) }]}>
+          {song.artworkUrl && (
+            <Image
+              source={{ uri: song.artworkUrl }}
+              style={StyleSheet.absoluteFillObject}
+              contentFit="cover"
+            />
+          )}
+          {isActive && (
+            <View
+              style={[
+                StyleSheet.absoluteFillObject,
+                {
+                  backgroundColor: "rgba(0,0,0,0.4)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                },
+              ]}
+            >
+              <PlayIcon c="white" />
+            </View>
+          )}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text
             style={[
-              StyleSheet.absoluteFillObject,
-              {
-                backgroundColor: "rgba(0,0,0,0.4)",
-                alignItems: "center",
-                justifyContent: "center",
-              },
+              typography.labelLg,
+              { color: isActive ? colors.brand : colors.textPrimary },
             ]}
+            numberOfLines={1}
           >
-            <PlayIcon c="white" />
-          </View>
-        )}
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text
-          style={[
-            typography.labelLg,
-            { color: isActive ? colors.brand : colors.textPrimary },
-          ]}
-          numberOfLines={1}
-        >
-          {song.title}
-        </Text>
-        <Text
-          style={[typography.labelSm, { color: colors.textSecondary }]}
-          numberOfLines={1}
-        >
-          {song.artist}
-        </Text>
-      </View>
+            {song.title}
+          </Text>
+          <Text
+            style={[typography.labelSm, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            {song.artist}
+          </Text>
+        </View>
+      </TouchableOpacity>
+
       <TouchableOpacity
         onPress={onRemove}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -575,10 +597,18 @@ function QueueItem({
           <Path d="M18 6L6 18M6 6l12 12" />
         </Svg>
       </TouchableOpacity>
-      <View style={{ paddingLeft: Spacing[2] }}>
-        <DragIcon c={colors.textTertiary} />
-      </View>
-    </TouchableOpacity>
+
+      {/* Drag handle — onPressIn + long-press starts the drag.
+          Only this area triggers dragging; the rest of the row stays tappable. */}
+      <TouchableOpacity
+        onLongPress={onDragStart}
+        delayLongPress={150}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        style={{ paddingLeft: Spacing[2] }}
+      >
+        <DragIcon c={isDragging ? colors.brand : colors.textTertiary} />
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -589,6 +619,12 @@ const qSt = StyleSheet.create({
     gap: Spacing[3],
     paddingHorizontal: Layout.screenPaddingH,
     paddingVertical: Spacing[2.5],
+  },
+  pressArea: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing[3],
   },
   art: {
     width: 48,
@@ -661,19 +697,27 @@ function QueueModal({
             },
           ]}
         >
-          {queue.length} songs · Long-press drag handle to reorder
+          {queue.length} songs · Press and hold the ⠿ handle to reorder
         </Text>
 
-        <FlatList
+        <DraggableFlatList
           data={queue}
           keyExtractor={(item, i) => `${item.id}-${i}`}
-          renderItem={({ item, index }) => (
+          // DraggableFlatList auto-scrolls near top/bottom edges while dragging
+          autoscrollThreshold={60}
+          autoscrollSpeed={150}
+          activationDistance={0}
+          onDragEnd={({ from, to }) => {
+            if (from !== to) reorderQueue(from, to);
+          }}
+          renderItem={({ item, index, drag, isActive: isDragging }) => (
             <QueueItem
               song={item}
-              index={index}
               isActive={index === queueIndex}
-              onPress={() => void skipToIndex(index)}
-              onRemove={() => removeFromQueue(index)}
+              isDragging={isDragging}
+              onPress={() => void skipToIndex(index ?? 0)}
+              onRemove={() => removeFromQueue(index ?? 0)}
+              onDragStart={drag}
             />
           )}
           ItemSeparatorComponent={() => (
@@ -705,22 +749,144 @@ const qModalSt = StyleSheet.create({
   headerRight: { flexDirection: "row", alignItems: "center" },
 });
 
-// ── Lyrics placeholder ────────────────────────────────────────────────────────
+// ── Lyrics view ───────────────────────────────────────────────────────────────
 function LyricsView({ song }: { song: Song | null }) {
   const { colors, typography } = useTheme();
+  const positionMs = usePlayerProgressStore((s) => s.positionMs);
+  const listRef = useRef<FlatList<SyncedLyricLine | { text: string }>>(null);
+  const lastScrolledIndex = useRef(-1);
+
+  const { data: lyrics, isLoading } = useQuery({
+    queryKey: ["lyrics", song?.title, song?.artist],
+    queryFn: () =>
+      getLyrics({
+        title: song!.title,
+        artist: song!.artist,
+        album: song?.album,
+        durationSec: song ? Math.round(song.durationMs / 1000) : undefined,
+      }),
+    enabled: !!song,
+    staleTime: 1000 * 60 * 30,
+    retry: 1,
+  });
+
+  const synced = lyrics?.syncedLyrics ?? null;
+  const activeIndex = synced ? getActiveLyricIndex(synced, positionMs) : -1;
+
+  // Auto-scroll to the active synced line
+  useEffect(() => {
+    if (!synced || activeIndex < 0 || activeIndex === lastScrolledIndex.current)
+      return;
+    lastScrolledIndex.current = activeIndex;
+    listRef.current?.scrollToIndex({
+      index: activeIndex,
+      animated: true,
+      viewPosition: 0.35,
+    });
+  }, [activeIndex, synced]);
+
+  if (!song) {
+    return (
+      <View style={lyricsSt.wrap}>
+        <Text
+          style={[
+            typography.bodyMd,
+            { color: colors.textSecondary, textAlign: "center" },
+          ]}
+        >
+          No track playing
+        </Text>
+      </View>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <View style={lyricsSt.wrap}>
+        <ActivityIndicator color={colors.brand} />
+      </View>
+    );
+  }
+
+  if (!lyrics || (!lyrics.plainLyrics && !lyrics.syncedLyrics)) {
+    return (
+      <View style={lyricsSt.wrap}>
+        <Text
+          style={[
+            typography.bodyMd,
+            { color: colors.textSecondary, textAlign: "center" },
+          ]}
+        >
+          Lyrics not available.
+        </Text>
+      </View>
+    );
+  }
+
+  if (lyrics.instrumental) {
+    return (
+      <View style={lyricsSt.wrap}>
+        <Text
+          style={[
+            typography.bodyMd,
+            { color: colors.textSecondary, textAlign: "center" },
+          ]}
+        >
+          This track is instrumental.
+        </Text>
+      </View>
+    );
+  }
+
+  // ── Synced lyrics: scrollable, highlight active line ─────────────────────────
+  if (synced && synced.length > 0) {
+    return (
+      <FlatList
+        ref={listRef}
+        data={synced}
+        keyExtractor={(_, i) => String(i)}
+        contentContainerStyle={lyricsSt.syncedContent}
+        showsVerticalScrollIndicator={false}
+        onScrollToIndexFailed={() => {
+          /* ignore — list not yet measured */
+        }}
+        renderItem={({ item, index }) => (
+          <Text
+            style={[
+              typography.h3,
+              lyricsSt.syncedLine,
+              {
+                color:
+                  index === activeIndex ? colors.brand : colors.textTertiary,
+                fontWeight: index === activeIndex ? "700" : "500",
+              },
+            ]}
+          >
+            {item.text || "⋯"}
+          </Text>
+        )}
+      />
+    );
+  }
+
+  // ── Plain lyrics: simple scrollable text block ────────────────────────────────
   return (
-    <View style={lyricsSt.wrap}>
-      <Text
-        style={[
-          typography.bodyMd,
-          { color: colors.textSecondary, textAlign: "center" },
-        ]}
-      >
-        {song
-          ? `Lyrics for "${song.title}" — coming in Phase 2`
-          : "No track playing"}
-      </Text>
-    </View>
+    <FlatList
+      data={[{ text: lyrics.plainLyrics ?? "" }]}
+      keyExtractor={() => "plain"}
+      contentContainerStyle={lyricsSt.plainContent}
+      showsVerticalScrollIndicator={false}
+      renderItem={({ item }) => (
+        <Text
+          style={[
+            typography.bodyLg,
+            { color: colors.textPrimary, lineHeight: 28 },
+          ]}
+        >
+          {item.text}
+        </Text>
+      )}
+    />
   );
 }
 
@@ -730,6 +896,16 @@ const lyricsSt = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: Layout.screenPaddingH,
+  },
+  syncedContent: {
+    paddingHorizontal: Layout.screenPaddingH,
+    paddingVertical: Spacing[10],
+    gap: Spacing[4],
+  },
+  syncedLine: { textAlign: "center" },
+  plainContent: {
+    paddingHorizontal: Layout.screenPaddingH,
+    paddingVertical: Spacing[4],
   },
 });
 
@@ -763,22 +939,23 @@ export function PlayerScreen(_props: PlayerScreenProps): React.JSX.Element {
   );
 
   // ── Swipe-right-to-dismiss ───────────────────────────────────────────────────
-  // Swiping right anywhere on the screen (outside the seek bar / queue button,
-  // which have their own pan gestures) closes the player and returns to the
-  // previous screen — mirroring the swipe-down dismiss already provided by the
-  // modal presentation in RootNavigator.
+  // Swiping right from the LEFT EDGE of the screen dismisses the player
+  // (mirrors iOS-style edge-swipe-back). This is implemented as a thin
+  // (24px) invisible strip with its own GestureDetector — NOT wrapping the
+  // whole screen. Wrapping the entire content in a Pan GestureDetector
+  // previously blocked all TouchableOpacity presses on Android (buttons
+  // appeared "frozen"), which this fixes.
   const screenTranslateX = useSharedValue(0);
   const SWIPE_DISMISS_THRESHOLD = 80;
+  const EDGE_WIDTH = 24;
 
   const goBack = useCallback(() => navigation.goBack(), [navigation]);
 
-  const swipeGesture = Gesture.Pan()
-    .activeOffsetX([20, 999]) // only activate for clear rightward drags
-    .failOffsetY([-15, 15]) // let vertical scrolls/seek-bar gestures win
+  const edgeSwipeGesture = Gesture.Pan()
+    .activeOffsetX([10, 999])
+    .failOffsetY([-20, 20])
     .onUpdate((e) => {
-      if (e.translationX > 0) {
-        screenTranslateX.value = e.translationX;
-      }
+      if (e.translationX > 0) screenTranslateX.value = e.translationX;
     })
     .onEnd((e) => {
       if (e.translationX > SWIPE_DISMISS_THRESHOLD) {
@@ -801,151 +978,156 @@ export function PlayerScreen(_props: PlayerScreenProps): React.JSX.Element {
     >
       <SafeAreaView style={styles.safe}>
         <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
-        <GestureDetector gesture={swipeGesture}>
-          <Animated2.View style={[styles.container, screenAnimStyle]}>
-            {/* Header */}
-            <View style={styles.header}>
-              <TouchableOpacity
-                onPress={() => navigation.goBack()}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <ChevronDown c={colors.textSecondary} />
-              </TouchableOpacity>
-              <View style={styles.headerCenter}>
-                <Text
-                  style={[
-                    typography.labelMd,
-                    {
-                      color: colors.textSecondary,
-                      textTransform: "uppercase",
-                      letterSpacing: 1.2,
-                    },
-                  ]}
-                >
-                  Now Playing
-                </Text>
-                {currentSong?.provider === "local" && (
-                  <Text style={[typography.labelXs, { color: colors.brand }]}>
-                    📱 Local
-                  </Text>
-                )}
-              </View>
-              <TouchableOpacity
-                onPress={() => setShowDots(true)}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <DotsIcon c={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
 
-            {/* Artwork or Lyrics */}
-            {lyricsOn ? (
-              <LyricsView song={currentSong} />
-            ) : (
-              <View style={styles.artworkWrap}>
-                <PlayerArtwork song={currentSong} isPlaying={isPlaying} />
-              </View>
-            )}
+        {/* Left-edge swipe strip — does NOT cover buttons/content */}
+        <GestureDetector gesture={edgeSwipeGesture}>
+          <View
+            style={[styles.edgeStrip, { width: EDGE_WIDTH }]}
+            pointerEvents="box-only"
+          />
+        </GestureDetector>
 
-            {/* Song info */}
-            <View style={styles.songInfo}>
-              <Text
-                style={[typography.h1, { color: colors.textPrimary }]}
-                numberOfLines={1}
-              >
-                {currentSong?.title ?? "No track selected"}
-              </Text>
-              <Text
-                style={[typography.bodyLg, { color: colors.textSecondary }]}
-                numberOfLines={1}
-              >
-                {currentSong?.artist ?? "—"}
-              </Text>
-            </View>
-
-            {/* Seek bar */}
-            <View style={styles.seekWrap}>
-              <SeekBar onSeek={handleSeek} />
-            </View>
-
-            {/* Controls */}
-            <View style={styles.controls}>
-              <TouchableOpacity
-                onPress={toggleShuffle}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <ShuffleIcon
-                  c={isShuffle ? colors.brand : colors.textTertiary}
-                  a={isShuffle}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => void skipToPrevious()}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <PrevIcon c={colors.textPrimary} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.playBtn, { backgroundColor: colors.brand }]}
-                onPress={() => void togglePlayPause()}
-                activeOpacity={0.85}
-              >
-                {isLoading ? (
-                  <View style={styles.loadingDot} />
-                ) : isPlaying ? (
-                  <PauseIcon c={colors.textOnBrand} />
-                ) : (
-                  <PlayIcon c={colors.textOnBrand} />
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => void skipToNext()}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <NextIcon c={colors.textPrimary} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={cycleRepeatMode}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <RepeatIcon
-                  c={repeatMode !== "off" ? colors.brand : colors.textTertiary}
-                  a={repeatMode !== "off"}
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* Queue shortcut */}
+        <Animated2.View style={[styles.container, screenAnimStyle]}>
+          {/* Header */}
+          <View style={styles.header}>
             <TouchableOpacity
-              style={[styles.queueBtn, { borderColor: colors.border }]}
-              onPress={() => setShowQueue(true)}
-              activeOpacity={0.7}
+              onPress={() => navigation.goBack()}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <QueueIcon c={colors.textSecondary} />
-              <Text
-                style={[typography.labelSm, { color: colors.textSecondary }]}
-              >
-                View queue
-              </Text>
+              <ChevronDown c={colors.textSecondary} />
             </TouchableOpacity>
-
-            {currentSong?.album && (
+            <View style={styles.headerCenter}>
               <Text
                 style={[
                   typography.labelMd,
                   {
-                    color: colors.textTertiary,
-                    textAlign: "center",
-                    marginTop: Spacing[2],
+                    color: colors.textSecondary,
+                    textTransform: "uppercase",
+                    letterSpacing: 1.2,
                   },
                 ]}
-                numberOfLines={1}
               >
-                {currentSong.album}
+                Now Playing
               </Text>
-            )}
-          </Animated2.View>
-        </GestureDetector>
+              {currentSong?.provider === "local" && (
+                <Text style={[typography.labelXs, { color: colors.brand }]}>
+                  📱 Local
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity
+              onPress={() => setShowDots(true)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <DotsIcon c={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Artwork or Lyrics */}
+          {lyricsOn ? (
+            <LyricsView song={currentSong} />
+          ) : (
+            <View style={styles.artworkWrap}>
+              <PlayerArtwork song={currentSong} isPlaying={isPlaying} />
+            </View>
+          )}
+
+          {/* Song info */}
+          <View style={styles.songInfo}>
+            <Text
+              style={[typography.h1, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
+              {currentSong?.title ?? "No track selected"}
+            </Text>
+            <Text
+              style={[typography.bodyLg, { color: colors.textSecondary }]}
+              numberOfLines={1}
+            >
+              {currentSong?.artist ?? "—"}
+            </Text>
+          </View>
+
+          {/* Seek bar */}
+          <View style={styles.seekWrap}>
+            <SeekBar onSeek={handleSeek} />
+          </View>
+
+          {/* Controls */}
+          <View style={styles.controls}>
+            <TouchableOpacity
+              onPress={toggleShuffle}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <ShuffleIcon
+                c={isShuffle ? colors.brand : colors.textTertiary}
+                a={isShuffle}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => void skipToPrevious()}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <PrevIcon c={colors.textPrimary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.playBtn, { backgroundColor: colors.brand }]}
+              onPress={() => void togglePlayPause()}
+              activeOpacity={0.85}
+            >
+              {isLoading ? (
+                <View style={styles.loadingDot} />
+              ) : isPlaying ? (
+                <PauseIcon c={colors.textOnBrand} />
+              ) : (
+                <PlayIcon c={colors.textOnBrand} />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => void skipToNext()}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <NextIcon c={colors.textPrimary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={cycleRepeatMode}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <RepeatIcon
+                c={repeatMode !== "off" ? colors.brand : colors.textTertiary}
+                a={repeatMode !== "off"}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Queue shortcut */}
+          <TouchableOpacity
+            style={[styles.queueBtn, { borderColor: colors.border }]}
+            onPress={() => setShowQueue(true)}
+            activeOpacity={0.7}
+          >
+            <QueueIcon c={colors.textSecondary} />
+            <Text style={[typography.labelSm, { color: colors.textSecondary }]}>
+              View queue
+            </Text>
+          </TouchableOpacity>
+
+          {currentSong?.album && (
+            <Text
+              style={[
+                typography.labelMd,
+                {
+                  color: colors.textTertiary,
+                  textAlign: "center",
+                  marginTop: Spacing[2],
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {currentSong.album}
+            </Text>
+          )}
+        </Animated2.View>
 
         {/* Modals — outside the swipeable area so they aren't affected by translateX */}
         <DotsMenu
@@ -966,6 +1148,13 @@ export function PlayerScreen(_props: PlayerScreenProps): React.JSX.Element {
 
 const styles = StyleSheet.create({
   gradient: { flex: 1 },
+  edgeStrip: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 10,
+  },
   safe: { flex: 1 },
   container: {
     flex: 1,

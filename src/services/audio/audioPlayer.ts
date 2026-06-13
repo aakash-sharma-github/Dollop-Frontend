@@ -1,5 +1,7 @@
 import { Audio, type AVPlaybackStatus } from 'expo-av';
 import type { Song } from '@app-types/index';
+import { logger } from '@utils/logger';
+import { getStreamHeaders } from '@services/cloud/googleDrive';
 
 /**
  * AudioPlayer wraps expo-av's Audio.Sound with a clean interface
@@ -51,16 +53,39 @@ class AudioPlayer {
     }
 
     if (!song.previewUrl) {
-      console.warn('[AudioPlayer] No previewUrl for:', song.title);
+      logger.warn('AudioPlayer', 'No previewUrl for song', { title: song.title, provider: song.provider });
       return;
     }
 
-    const { sound } = await Audio.Sound.createAsync(
-      { uri: song.previewUrl },
-      { shouldPlay: true, progressUpdateIntervalMillis: 500 },
-      this.handleStatus,
-    );
-    this.sound = sound;
+    // Google Drive streams require an Authorization header that can expire
+    // hourly — fetch fresh headers right before playback.
+    let headers: Record<string, string> | undefined;
+    if (song.provider === 'gdrive') {
+      try {
+        const driveHeaders = await getStreamHeaders();
+        if (driveHeaders) headers = driveHeaders;
+      } catch (err) {
+        logger.error('AudioPlayer', 'Failed to get Google Drive stream headers', err);
+      }
+    }
+
+    logger.debug('AudioPlayer', 'loadAndPlay', {
+      title: song.title,
+      provider: song.provider,
+      hasHeaders: !!headers,
+    });
+
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        headers ? { uri: song.previewUrl, headers } : { uri: song.previewUrl },
+        { shouldPlay: true, progressUpdateIntervalMillis: 500 },
+        this.handleStatus,
+      );
+      this.sound = sound;
+    } catch (err) {
+      logger.error('AudioPlayer', 'createAsync failed', { title: song.title, err });
+      throw err;
+    }
   }
 
   async play(): Promise<void> {
